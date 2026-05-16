@@ -1,0 +1,108 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User's financial profile and preferences",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "ageGroup": { "type": "string", "enum": ["under18", "18-24", "25-40", "40+"] },
+        "taxpayerStatus": { "type": "string", "enum": ["taxpayer", "non-taxpayer"] },
+        "monthlyIncome": { "type": "number" },
+        "currency": { "type": "string" },
+        "currencySymbol": { "type": "string" },
+        "financialPersona": { "type": "string" },
+        "riskTolerance": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Individual financial transaction",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["debit", "credit", "transfer"] },
+        "merchantName": { "type": "string" },
+        "description": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "isRecurring": { "type": "boolean" },
+        "emotionTag": { "type": "string" },
+        "source": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "type", "date"]
+    },
+    "Goal": {
+      "title": "Savings Goal",
+      "description": "Financial goal tracked by the user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "targetAmount": { "type": "number" },
+        "currentAmount": { "type": "number" },
+        "deadline": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "targetAmount"]
+    },
+    "Insight": {
+      "title": "Financial Insight",
+      "description": "AI-generated insight about user behavior",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["trend", "warning", "opportunity", "anomaly"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "severity": { "type": "string", "enum": ["info", "caution", "high"] },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "title", "description"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "Detected recurring cost",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "merchantName": { "type": "string" },
+        "amount": { "type": "number" },
+        "renewalFrequency": { "type": "string" },
+        "nextRenewalDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Private user profile data"
+    },
+    "users/{userId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "User's transaction history"
+    },
+    "users/{userId}/goals/{goalId}": {
+      "schema": "Goal",
+      "description": "User's savings goals"
+    },
+    "users/{userId}/insights/{insightId}": {
+      "schema": "Insight",
+      "description": "Personalized AI insights"
+    },
+    "users/{userId}/subscriptions/{subscriptionId}": {
+      "schema": "Subscription",
+      "description": "Detected user subscriptions"
+    }
+  }
+}
