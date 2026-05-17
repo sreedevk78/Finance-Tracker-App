@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, IndianRupee, Plus, ShieldCheck, Sparkles, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, IndianRupee, LineChart, MessageCircle, Plus, ShieldCheck, Sparkles, Target, UploadCloud, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import TopBar from '../components/layout/TopBar';
 import { CATEGORIES, formatMoney, signedMoney } from '../domain/finance';
@@ -8,6 +8,12 @@ export default function Dashboard({ workspace }: { workspace: Workspace }) {
   const { account, transactions, goals, model } = workspace;
   const primary = model.insights[0];
   const linkedUpi = transactions.filter((tx) => tx.source.includes('upi') || tx.source.includes('gpay')).length;
+  const nextActions = [
+    !linkedUpi ? 'Import GPay/UPI receipts or bank SMS text so Aura can see real spend without manual typing.' : null,
+    !account?.balance_known ? 'Add a verified balance anchor. Zero is allowed only when it is true.' : null,
+    !model.ready ? model.reasons[0] : null,
+    model.ready ? 'Review the forecast range before asking the coach for tradeoffs.' : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div>
@@ -36,11 +42,11 @@ export default function Dashboard({ workspace }: { workspace: Workspace }) {
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               <Metric label="Health" value={model.health ? `${model.health}/100` : 'Gated'} />
               <Metric label="Cashflow" value={signedMoney(model.monthNet, account || undefined)} />
-              <Metric label="Runway" value={model.runwayDays === null ? 'Stable' : model.runwayDays ? `${model.runwayDays}d` : 'n/a'} />
+              <Metric label="Runway" value={!model.ready ? 'Gated' : model.runwayDays === null ? 'Stable' : model.runwayDays ? `${model.runwayDays}d` : 'n/a'} />
             </div>
           </div>
 
-          <div className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
+          <Link to="/insights" className="block rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow transition hover:bg-primary/5">
             <div className="flex items-center justify-between">
               <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Primary signal</p>
               <span className={`rounded-full px-3 py-1 text-[11px] font-black uppercase ${primary.severity === 'high' ? 'bg-error-container text-error' : 'bg-primary/10 text-primary'}`}>
@@ -52,14 +58,40 @@ export default function Dashboard({ workspace }: { workspace: Workspace }) {
             <div className="mt-5 flex flex-wrap gap-2">
               {primary.facts.map((fact) => <span key={fact} className="rounded-full bg-surface-container-low px-3 py-2 text-[11px] font-bold text-on-surface-variant">{fact}</span>)}
             </div>
+          </Link>
+        </section>
+
+        <section className="mt-4 rounded-[2rem] border border-surface-container bg-surface p-5 card-shadow">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Start here</p>
+              <h2 className="mt-1 text-title-md font-black">Build intelligence from real money movement</h2>
+            </div>
+            <Link to="/activity#import-upi" className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary px-4 font-black text-on-primary">
+              Import money <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <ActionCard icon={UploadCloud} title="1. Capture" body="Paste, share, upload, or manually add real transactions." to="/activity#import-upi" />
+            <ActionCard icon={ShieldCheck} title="2. Verify" body="Set balance and let RLS-backed history sync." to="/settings" />
+            <ActionCard icon={LineChart} title="3. Forecast" body="Unlock projection only after data gates pass." to="/forecast" />
+            <ActionCard icon={MessageCircle} title="4. Coach" body="Ask live AI only when a provider key is configured." to="/coach" />
+          </div>
+          <div className="mt-5 grid gap-2">
+            {nextActions.slice(0, 3).map((action) => (
+              <div key={action} className="flex gap-3 rounded-2xl bg-surface-container-low p-4 text-body-sm font-bold text-on-surface-variant">
+                <Target className="h-5 w-5 shrink-0 text-primary" />
+                <span>{action}</span>
+              </div>
+            ))}
           </div>
         </section>
 
         <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card icon={IndianRupee} label="This month spend" value={formatMoney(model.monthSpend, account || undefined)} sub="Observed debits only" />
-          <Card icon={Sparkles} label="Recurring load" value={formatMoney(model.recurringLoad, account || undefined)} sub={`${model.recurring.length} detected pattern${model.recurring.length === 1 ? '' : 's'}`} />
-          <Card icon={ShieldCheck} label="UPI/GPay linked" value={String(linkedUpi)} sub="Reference-backed imports" />
-          <Card icon={CheckCircle2} label="Active goals" value={String(goals.length)} sub="Protected outcomes" />
+          <Card icon={IndianRupee} label="This month spend" value={formatMoney(model.monthSpend, account || undefined)} sub="Observed debits only" to="/insights" />
+          <Card icon={Sparkles} label="Recurring load" value={formatMoney(model.recurringLoad, account || undefined)} sub={`${model.recurring.length} detected pattern${model.recurring.length === 1 ? '' : 's'}`} to="/forecast" />
+          <Card icon={ShieldCheck} label="UPI/GPay linked" value={String(linkedUpi)} sub="Reference-backed imports" to="/activity#import-upi" />
+          <Card icon={CheckCircle2} label="Active goals" value={String(goals.length)} sub="Protected outcomes" to="/goals" />
         </section>
 
         <section className="mt-4 grid gap-4 lg:grid-cols-[.95fr_1.05fr]">
@@ -108,6 +140,16 @@ export default function Dashboard({ workspace }: { workspace: Workspace }) {
   );
 }
 
+function ActionCard({ icon: Icon, title, body, to }: { icon: LucideIcon; title: string; body: string; to: string }) {
+  return (
+    <Link to={to} className="min-w-0 rounded-3xl bg-surface-container-low p-4 transition hover:bg-primary/10">
+      <Icon className="mb-4 h-5 w-5 text-primary" />
+      <p className="font-black">{title}</p>
+      <p className="mt-2 text-body-sm leading-relaxed text-on-surface-variant">{body}</p>
+    </Link>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/10 p-4">
@@ -117,14 +159,14 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Card({ icon: Icon, label, value, sub }: { icon: LucideIcon; label: string; value: string; sub: string }) {
+function Card({ icon: Icon, label, value, sub, to }: { icon: LucideIcon; label: string; value: string; sub: string; to: string }) {
   return (
-    <article className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
+    <Link to={to} className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow transition hover:bg-primary/5">
       <Icon className="mb-5 h-6 w-6 text-primary" />
       <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">{label}</p>
       <h3 className="mt-2 text-display-lg-mobile font-black">{value}</h3>
       <p className="mt-2 text-body-sm text-on-surface-variant">{sub}</p>
-    </article>
+    </Link>
   );
 }
 

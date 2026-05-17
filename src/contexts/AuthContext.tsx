@@ -32,9 +32,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     let mounted = true;
-    supabase.auth.getSession().then(({ data, error }) => {
+    supabase.auth.getSession().then(async ({ data, error }) => {
       if (!mounted) return;
-      if (error) console.error(error);
+      if (error || !data.session) {
+        setSession(null);
+        setLoading(false);
+        return;
+      }
+      const verified = await supabase.auth.getUser();
+      if (!mounted) return;
+      if (verified.error || !verified.data.user) {
+        await supabase.auth.signOut();
+        setSession(null);
+        setLoading(false);
+        return;
+      }
       setSession(data.session);
       setLoading(false);
     });

@@ -281,13 +281,19 @@ export function signedMoney(value: number, account?: Partial<Account>) {
 }
 
 export function todayISO(now = new Date()) {
-  return now.toISOString().slice(0, 10);
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export function dateOnly(value: unknown) {
+  const raw = String(value || '').trim();
+  const plainDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (plainDate) return `${plainDate[1]}-${plainDate[2]}-${plainDate[3]}`;
   const date = value ? new Date(String(value)) : new Date();
   if (Number.isNaN(date.getTime())) return todayISO();
-  return date.toISOString().slice(0, 10);
+  return todayISO(date);
 }
 
 export function classifyTransaction(input: { merchant_name?: string; note?: string | null; type?: TransactionType; source?: string }) {

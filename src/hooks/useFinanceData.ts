@@ -16,34 +16,47 @@ export function useFinanceData(userId?: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const loaded = useRef(false);
+  const requestId = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!userId) return;
-    setLoading(true);
+    const currentRequest = requestId.current + 1;
+    requestId.current = currentRequest;
+    if (!loaded.current) setLoading(true);
     setError(null);
     try {
       const workspace = await loadWorkspace(userId);
-      if (!mounted.current) return;
+      if (!mounted.current || requestId.current !== currentRequest) return;
       setProfile(workspace.profile);
       setAccount(workspace.account);
       setTransactions(workspace.transactions);
       setGoals(workspace.goals);
       setImports(workspace.imports);
       setCoachMessages(workspace.coachMessages);
+      loaded.current = true;
     } catch (err) {
-      if (!mounted.current) return;
+      if (!mounted.current || requestId.current !== currentRequest) return;
       setError(err instanceof Error ? err.message : 'Failed to load workspace.');
     } finally {
-      if (mounted.current) setLoading(false);
+      if (mounted.current && requestId.current === currentRequest) setLoading(false);
     }
   }, [userId]);
 
   useEffect(() => {
     mounted.current = true;
     if (!userId) {
+      loaded.current = false;
+      setProfile(null);
+      setAccount(null);
+      setTransactions([]);
+      setGoals([]);
+      setImports([]);
+      setCoachMessages([]);
       setLoading(false);
       return;
     }
+    loaded.current = false;
     refresh();
     return () => {
       mounted.current = false;

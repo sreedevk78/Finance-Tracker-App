@@ -7,24 +7,35 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState('');
 
   async function submitEmail() {
     setStatus('');
     setError('');
+    const cleanedEmail = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedEmail)) {
+      setError('Enter a valid email address.');
+      return;
+    }
+    setBusy('email');
     try {
-      await signInWithEmail(email);
+      await signInWithEmail(cleanedEmail);
       setStatus('Magic link sent. Check your email to continue.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to send magic link.');
+    } finally {
+      setBusy('');
     }
   }
 
   async function google() {
     setError('');
+    setBusy('google');
     try {
       await signInWithGoogle();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google sign-in failed.');
+      setBusy('');
     }
   }
 
@@ -58,8 +69,8 @@ export default function Login() {
             <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Secure access</p>
             <h2 className="mt-2 text-display-lg-mobile font-black tracking-normal">Continue to Aura</h2>
           </div>
-          <button onClick={google} className="flex h-16 w-full items-center justify-between rounded-2xl bg-on-surface px-5 font-black text-surface">
-            <span>Continue with Google</span>
+          <button disabled={busy === 'google'} onClick={google} className="flex h-16 w-full items-center justify-between rounded-2xl bg-on-surface px-5 font-black text-surface disabled:opacity-50">
+            <span>{busy === 'google' ? 'Opening Google...' : 'Continue with Google'}</span>
             <ArrowRight className="h-5 w-5" />
           </button>
           <div className="my-6 flex items-center gap-3 text-label-caps font-black uppercase tracking-widest text-on-surface-variant">
@@ -69,8 +80,8 @@ export default function Login() {
             <label className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Email magic link</label>
             <div className="flex gap-2 rounded-2xl bg-surface-container-low p-2">
               <Mail className="ml-3 mt-3 h-5 w-5 text-on-surface-variant" />
-              <input value={email} onChange={(event) => setEmail(event.target.value)} className="min-w-0 flex-1 bg-transparent outline-none" placeholder="you@example.com" />
-              <button onClick={submitEmail} className="rounded-xl bg-primary px-4 font-black text-on-primary">Send</button>
+              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="min-w-0 flex-1 bg-transparent outline-none" placeholder="you@example.com" />
+              <button disabled={busy === 'email'} onClick={submitEmail} className="rounded-xl bg-primary px-4 font-black text-on-primary disabled:opacity-50">{busy === 'email' ? 'Sending' : 'Send'}</button>
             </div>
           </div>
           {status && <p className="mt-4 rounded-2xl bg-primary/10 p-4 text-body-sm font-bold text-primary">{status}</p>}

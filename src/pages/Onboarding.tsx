@@ -36,6 +36,9 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
     setSaving(true);
     setError('');
     try {
+      if (data.balance.trim() && !data.balanceKnown) {
+        throw new Error('Mark the balance as verified, or leave it blank and add it later.');
+      }
       await upsertOnboarding({
         userId: user.id,
         fullName: user.user_metadata?.full_name || user.user_metadata?.name || null,
@@ -45,7 +48,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
         currency: currency.code,
         currencySymbol: currency.symbol,
         balance: moneyNumber(data.balance),
-        balanceKnown: data.balanceKnown || data.balance.trim() !== '',
+        balanceKnown: data.balanceKnown,
         expectedMonthlyInflow: data.expectedMonthlyInflow.trim() ? moneyNumber(data.expectedMonthlyInflow) : null,
         firstGoalTitle: data.firstGoalTitle,
         firstGoalTarget: moneyNumber(data.firstGoalTarget) || 10000,

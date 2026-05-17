@@ -10,13 +10,29 @@ export default function Goals({ workspace }: { workspace: Workspace }) {
   const [target, setTarget] = useState('');
   const [current, setCurrent] = useState('');
   const [deadline, setDeadline] = useState('');
+  const [draftProgress, setDraftProgress] = useState<Record<string, string>>({});
+  const [busyGoal, setBusyGoal] = useState('');
 
   async function save() {
-    await addGoal({ title, target_amount: Number(target), current_amount: Number(current || 0), deadline: deadline || null, status: 'active' });
-    setTitle('');
-    setTarget('');
-    setCurrent('');
-    setDeadline('');
+    setBusyGoal('new');
+    try {
+      await addGoal({ title, target_amount: Number(target), current_amount: Number(current || 0), deadline: deadline || null, status: 'active' });
+      setTitle('');
+      setTarget('');
+      setCurrent('');
+      setDeadline('');
+    } finally {
+      setBusyGoal('');
+    }
+  }
+
+  async function saveProgress(id: string, amount: string) {
+    setBusyGoal(id);
+    try {
+      await updateGoal(id, Number(amount || 0));
+    } finally {
+      setBusyGoal('');
+    }
   }
 
   return (
@@ -33,7 +49,7 @@ export default function Goals({ workspace }: { workspace: Workspace }) {
             <input value={target} onChange={(e) => setTarget(e.target.value)} inputMode="decimal" placeholder="Target amount" className="h-14 rounded-2xl bg-surface-container-low px-4 outline-none" />
             <input value={current} onChange={(e) => setCurrent(e.target.value)} inputMode="decimal" placeholder="Current saved" className="h-14 rounded-2xl bg-surface-container-low px-4 outline-none" />
             <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" min={todayISO()} className="h-14 rounded-2xl bg-surface-container-low px-4 outline-none" />
-            <button onClick={save} className="h-14 rounded-2xl bg-primary font-black text-on-primary">Save goal</button>
+            <button disabled={busyGoal === 'new'} onClick={save} className="h-14 rounded-2xl bg-primary font-black text-on-primary disabled:opacity-50">{busyGoal === 'new' ? 'Saving...' : 'Save goal'}</button>
           </div>
         </section>
         <section className="grid gap-4">
@@ -57,8 +73,8 @@ export default function Goals({ workspace }: { workspace: Workspace }) {
                 </div>
                 <div className="mt-4 h-3 overflow-hidden rounded-full bg-surface-container-low"><div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} /></div>
                 <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-                  <input defaultValue={goal.current_amount} onBlur={(e) => goal.id && updateGoal(goal.id, Number(e.target.value))} inputMode="decimal" className="h-12 min-w-0 flex-1 rounded-2xl bg-surface-container-low px-4 outline-none" />
-                  <span className="grid h-12 place-items-center rounded-2xl bg-surface-container-low px-4 text-body-sm font-bold text-on-surface-variant">Blur to save</span>
+                  <input value={draftProgress[goal.id || ''] ?? String(goal.current_amount)} onChange={(e) => goal.id && setDraftProgress({ ...draftProgress, [goal.id]: e.target.value })} inputMode="decimal" className="h-12 min-w-0 flex-1 rounded-2xl bg-surface-container-low px-4 outline-none" />
+                  {goal.id && <button disabled={busyGoal === goal.id} onClick={() => saveProgress(goal.id!, draftProgress[goal.id!] ?? String(goal.current_amount))} className="h-12 rounded-2xl bg-surface-container-low px-4 text-body-sm font-bold text-on-surface-variant disabled:opacity-50">{busyGoal === goal.id ? 'Saving...' : 'Save progress'}</button>}
                 </div>
               </article>
             );

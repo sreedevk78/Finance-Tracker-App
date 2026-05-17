@@ -23,7 +23,7 @@ The app intentionally refuses fake financial output:
 - Bank/wallet CSV import and CSV export.
 - PWA installability and Android share-target support so copied receipt/SMS text can open directly in Aura’s UPI import panel.
 - Deterministic forecast engine with data-quality gates, confidence intervals, transaction-density checks, recurring detection, anomaly detection, category breakdowns, and confidence scoring.
-- Grounded coach endpoint that answers from Supabase financial facts and deterministic model output; Gemini is optional and guarded.
+- Live AI coach endpoint that answers from Supabase financial facts, deterministic model output, and recent coach memory. The chat is locked until `OPENAI_API_KEY` or `GEMINI_API_KEY` exists server-side; Aura does not save fake offline coach answers.
 
 ## Google Pay / UPI Reality
 
@@ -45,6 +45,8 @@ Create `.env.local`:
 ```bash
 VITE_SUPABASE_URL="https://YOUR_PROJECT.supabase.co"
 VITE_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY"
+OPENAI_API_KEY=""
+OPENAI_MODEL="gpt-5.1"
 GEMINI_API_KEY=""
 GEMINI_MODEL="gemini-2.0-flash"
 APP_URL="http://localhost:3000"
@@ -85,5 +87,5 @@ npm start
 - UPI/GPay single import accepts reference-backed receipts and rejects ungrounded text.
 - Bulk UPI/SMS paste imports valid entries and reports rejected rows.
 - CSV import/export works.
-- Coach answers cite stored facts or explains missing context.
+- Coach is disabled without a live AI key; with a key, answers cite stored facts or explain missing context.
 - Mobile layout has no horizontal overflow.

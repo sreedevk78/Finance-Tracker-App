@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Database, Download, KeyRound, Link2, LogOut, ShieldCheck, Wallet, type LucideIcon } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import { CURRENCIES, currencyInfo, formatMoney } from '../domain/finance';
@@ -11,10 +11,37 @@ export default function Settings({ workspace }: { workspace: Workspace }) {
   const [currency, setCurrency] = useState(account?.currency || 'INR');
   const [balance, setBalance] = useState(String(account?.balance || 0));
   const [balanceKnown, setBalanceKnown] = useState(Boolean(account?.balance_known));
+  const [provider, setProvider] = useState<{ aiConfigured: boolean; aiProvider: string | null } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('');
   const info = currencyInfo(currency);
 
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/health')
+      .then((response) => response.json())
+      .then((data) => {
+        if (alive) setProvider({ aiConfigured: Boolean(data.aiConfigured), aiProvider: data.aiProvider || null });
+      })
+      .catch(() => {
+        if (alive) setProvider({ aiConfigured: false, aiProvider: null });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   async function saveAccount() {
-    await updateAccount({ currency: info.code, currency_symbol: info.symbol, balance: Number(balance || 0), balance_known: balanceKnown });
+    setSaving(true);
+    setStatus('');
+    try {
+      await updateAccount({ currency: info.code, currency_symbol: info.symbol, balance: Number(balance || 0), balance_known: balanceKnown });
+      setStatus('Account anchor saved.');
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not save account.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   function exportCsv() {
@@ -55,20 +82,22 @@ export default function Settings({ workspace }: { workspace: Workspace }) {
               <label className="flex items-center gap-3 rounded-2xl bg-surface-container-low p-4 text-body-sm font-bold sm:col-span-2">
                 <input type="checkbox" checked={balanceKnown} onChange={(e) => setBalanceKnown(e.target.checked)} /> This balance is verified.
               </label>
-              <button onClick={saveAccount} className="h-14 rounded-2xl bg-primary font-black text-on-primary sm:col-span-2">Save account</button>
+              <button disabled={saving} onClick={saveAccount} className="h-14 rounded-2xl bg-primary font-black text-on-primary disabled:opacity-50 sm:col-span-2">{saving ? 'Saving...' : 'Save account'}</button>
             </div>
             <p className="mt-4 text-body-sm text-on-surface-variant">Current anchor: {formatMoney(account?.balance || 0, account || undefined)}</p>
+            {status && <p className="mt-3 rounded-2xl bg-primary/10 p-3 text-body-sm font-bold text-primary">{status}</p>}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <Action icon={Download} title="Export data" copy="Download the transaction ledger as CSV." action={exportCsv} />
-            <Action icon={KeyRound} title="Provider status" copy={`${imports.length} import logs. Supabase RLS enabled by schema.`} />
+            <Action icon={KeyRound} title="Provider status" copy={`${imports.length} import logs. AI ${provider?.aiConfigured ? `connected to ${provider.aiProvider}` : 'not configured'}. Supabase RLS enabled.`} />
           </div>
 
           <div className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
             <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Production constraints</p>
             <div className="mt-4 grid gap-3">
               <Constraint ok label="Supabase auth/data" detail="Configured through environment keys and RLS schema." />
+              <Constraint ok={Boolean(provider?.aiConfigured)} label="Live AI coach" detail={provider?.aiConfigured ? `Server-side ${provider.aiProvider} provider is connected.` : 'Set OPENAI_API_KEY or GEMINI_API_KEY. Chat is locked until then.'} />
               <Constraint ok label="GPay/UPI import" detail="Receipt/SMS/CSV linking with UTR/RRN dedupe." />
               <Constraint label="Direct Google Pay history sync" detail="Not exposed as a public consumer API; use AA/PSP provider for live sync." />
               <Constraint label="Native biometrics" detail="Requires Capacitor/React Native shell; not available in this web repo." />
@@ -85,7 +114,9 @@ function Metric({ icon: Icon, label, value }: { icon: LucideIcon; label: string;
 }
 
 function Action({ icon: Icon, title, copy, action }: { icon: LucideIcon; title: string; copy: string; action?: () => void }) {
-  return <button onClick={action} className="rounded-[2rem] border border-surface-container bg-surface p-6 text-left card-shadow"><Icon className="mb-5 h-6 w-6 text-primary" /><h3 className="font-black">{title}</h3><p className="mt-2 text-body-sm text-on-surface-variant">{copy}</p></button>;
+  const content = <><Icon className="mb-5 h-6 w-6 text-primary" /><h3 className="font-black">{title}</h3><p className="mt-2 text-body-sm text-on-surface-variant">{copy}</p></>;
+  if (action) return <button onClick={action} className="rounded-[2rem] border border-surface-container bg-surface p-6 text-left card-shadow">{content}</button>;
+  return <article className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">{content}</article>;
 }
 
 function Constraint({ ok = false, label, detail }: { ok?: boolean; label: string; detail: string }) {

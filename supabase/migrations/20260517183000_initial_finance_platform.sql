@@ -81,10 +81,14 @@ alter table public.transactions alter column type set default 'debit';
 alter table public.transactions alter column date set default current_date;
 alter table public.transactions drop constraint if exists transactions_source_check;
 alter table public.transactions add constraint transactions_source_check
-  check (source in ('manual','sync','import','ai','demo','csv_import','upi_csv_import','gpay_upi_import','gpay_upi_bulk_import'));
+  check (source in ('manual','sync','import','ai','csv_import','upi_csv_import','gpay_upi_import','gpay_upi_bulk_import'));
 
 create unique index if not exists transactions_user_source_ref_idx
 on public.transactions(user_id, source, external_ref)
+where external_ref is not null and external_ref <> '';
+
+create unique index if not exists transactions_user_external_ref_idx
+on public.transactions(user_id, external_ref)
 where external_ref is not null and external_ref <> '';
 
 create index if not exists transactions_user_date_idx on public.transactions(user_id, date desc);

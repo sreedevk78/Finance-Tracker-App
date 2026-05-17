@@ -1,20 +1,46 @@
-import { useState } from 'react';
-import { ArrowUp, Brain, Database, ShieldCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, ArrowUp, Brain, CheckCircle2, Database, ShieldCheck } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
-import { coachResponse } from '../domain/finance';
 import { saveCoachExchange } from '../lib/repository';
 import { useAuth } from '../contexts/AuthContext';
 import type { Workspace } from '../lib/ui';
 
+interface HealthState {
+  ok: boolean;
+  aiConfigured: boolean;
+  aiProvider: 'openai' | 'gemini' | null;
+}
+
 export default function Coach({ workspace }: { workspace: Workspace }) {
   const { user, session } = useAuth();
-  const { account, transactions, goals, model, coachMessages, refresh } = workspace;
+  const { transactions, goals, model, coachMessages, refresh } = workspace;
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [health, setHealth] = useState<HealthState | null>(null);
+  const aiReady = Boolean(health?.aiConfigured);
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/health')
+      .then((response) => response.json())
+      .then((data) => {
+        if (alive) setHealth(data);
+      })
+      .catch(() => {
+        if (alive) setHealth({ ok: false, aiConfigured: false, aiProvider: null });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   async function ask(question = input) {
     if (!question.trim() || !user) return;
+    if (!aiReady) {
+      setError('Live AI is not configured. Add OPENAI_API_KEY or GEMINI_API_KEY on the server before using chat.');
+      return;
+    }
     setLoading(true);
     setError('');
     setInput('');
@@ -29,10 +55,7 @@ export default function Coach({ workspace }: { workspace: Workspace }) {
       await saveCoachExchange(user.id, question, data.text, data.confidence, data.facts || []);
       await refresh();
     } catch (err) {
-      const deterministic = coachResponse(question, account, model, transactions, goals);
-      await saveCoachExchange(user.id, question, deterministic.text, deterministic.confidence, deterministic.facts);
-      await refresh();
-      setError(err instanceof Error ? `Remote model unavailable; Aura saved an offline verified calculation instead. ${err.message}` : 'Remote model unavailable; Aura saved an offline verified calculation instead.');
+      setError(err instanceof Error ? err.message : 'Live AI request failed. No answer was saved.');
     } finally {
       setLoading(false);
     }
@@ -45,7 +68,20 @@ export default function Coach({ workspace }: { workspace: Workspace }) {
         <section className="min-w-0 rounded-[2rem] border border-surface-container bg-surface p-5 card-shadow">
           <div className="mb-5 flex items-center gap-3">
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary"><Brain /></div>
-            <div><p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Aura Coach</p><h2 className="text-title-md font-black">Ask from verified context</h2></div>
+            <div>
+              <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Aura Coach</p>
+              <h2 className="text-title-md font-black">Live AI on verified context</h2>
+            </div>
+          </div>
+          <div className={`mb-5 rounded-3xl p-4 ${aiReady ? 'bg-primary/10 text-primary' : 'bg-error-container text-error'}`}>
+            <div className="flex gap-3">
+              {aiReady ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertTriangle className="h-5 w-5 shrink-0" />}
+              <p className="text-body-sm font-bold leading-relaxed">
+                {aiReady
+                  ? `Connected to ${health?.aiProvider === 'openai' ? 'OpenAI' : 'Gemini'} through the server. Answers are saved only after a live provider call succeeds.`
+                  : 'Chat is locked until a real AI provider key is configured. Aura will not fake a coach answer.'}
+              </p>
+            </div>
           </div>
           <div className="grid min-h-[420px] content-start gap-3">
             {coachMessages.map((message) => (
@@ -67,8 +103,8 @@ export default function Coach({ workspace }: { workspace: Workspace }) {
           </div>
           {error && <p className="mt-4 rounded-2xl bg-error-container p-3 text-body-sm font-bold text-error">{error}</p>}
           <div className="mt-5 flex gap-2">
-            <input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && ask()} placeholder="Ask about forecasts, recurring charges, goals, or UPI/GPay imports" className="h-14 min-w-0 flex-1 rounded-2xl bg-surface-container-low px-4 outline-none" />
-            <button disabled={loading} onClick={() => ask()} className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-on-primary disabled:opacity-50"><ArrowUp /></button>
+            <input disabled={!aiReady} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && ask()} placeholder={aiReady ? 'Ask about forecasts, recurring charges, goals, or UPI/GPay imports' : 'Configure OPENAI_API_KEY or GEMINI_API_KEY to unlock chat'} className="h-14 min-w-0 flex-1 rounded-2xl bg-surface-container-low px-4 outline-none disabled:opacity-60" />
+            <button disabled={loading || !aiReady} onClick={() => ask()} className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-on-primary disabled:opacity-50"><ArrowUp /></button>
           </div>
         </section>
 
@@ -87,7 +123,7 @@ export default function Coach({ workspace }: { workspace: Workspace }) {
           </div>
           <div className="flex flex-wrap gap-2">
             {['Predict my balance', 'Explain my burn rate', 'What did GPay import?', 'What recurring charges exist?'].map((chip) => (
-              <button key={chip} onClick={() => ask(chip)} className="rounded-full bg-surface px-4 py-2 text-body-sm font-bold card-shadow">{chip}</button>
+              <button key={chip} disabled={!aiReady} onClick={() => ask(chip)} className="rounded-full bg-surface px-4 py-2 text-body-sm font-bold card-shadow disabled:opacity-50">{chip}</button>
             ))}
           </div>
         </aside>
