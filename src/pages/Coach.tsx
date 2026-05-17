@@ -1,163 +1,107 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
+import { ArrowUp, Brain, Database, ShieldCheck } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Send, PlusCircle, ArrowUp } from 'lucide-react';
+import { coachResponse } from '../domain/finance';
+import { saveCoachExchange } from '../lib/repository';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import type { Workspace } from '../lib/ui';
 
-export default function Coach() {
-  const { user } = useAuth();
-  const [profile, setProfile] = useState<any>(null);
+export default function Coach({ workspace }: { workspace: Workspace }) {
+  const { user, session } = useAuth();
+  const { account, transactions, goals, model, coachMessages, refresh } = workspace;
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState([
-    {
-      id: '1',
-      role: 'aura',
-      text: "Based on our talk yesterday about your travel goal, I've run some new projections. Reallocating 15% of your dining spend puts you <span class='text-primary font-bold'>1.5 months ahead</span> of schedule.",
-      hasChart: true
-    }
-  ]);
-  const [isTyping, setIsTyping] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (user) {
-      getDoc(doc(db, 'users', user.uid)).then(snap => setProfile(snap.data()));
-    }
-  }, [user]);
-
-  const handleSend = async () => {
-    if (!input.trim()) return;
-    
-    const userMsg = { id: Date.now().toString(), role: 'user', text: input };
-    setMessages(prev => [...prev, userMsg]);
+  async function ask(question = input) {
+    if (!question.trim() || !user) return;
+    setLoading(true);
+    setError('');
     setInput('');
-    setIsTyping(true);
-
     try {
-      const res = await fetch('/api/ai/chat', {
+      const res = await fetchWithTimeout('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: input, 
-          context: {
-            ageGroup: profile?.ageGroup,
-            taxpayerStatus: profile?.taxpayerStatus,
-            currency: profile?.currency,
-            persona: profile?.financialPersona,
-            primaryGoal: profile?.primaryGoal,
-            income: profile?.monthlyIncome
-          } 
-        })
-      });
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify({ message: question }),
+      }, 15000);
+      if (!res.ok) throw new Error((await res.json()).error || 'Coach request failed.');
       const data = await res.json();
-      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'aura', text: data.text }]);
+      await saveCoachExchange(user.id, question, data.text, data.confidence, data.facts || []);
+      await refresh();
     } catch (err) {
-      console.error(err);
+      const deterministic = coachResponse(question, account, model, transactions, goals);
+      await saveCoachExchange(user.id, question, deterministic.text, deterministic.confidence, deterministic.facts);
+      await refresh();
+      setError(err instanceof Error ? `Remote model unavailable; Aura saved an offline verified calculation instead. ${err.message}` : 'Remote model unavailable; Aura saved an offline verified calculation instead.');
     } finally {
-      setIsTyping(false);
+      setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages]);
+  }
 
   return (
-    <div className="bg-background min-h-screen flex flex-col">
-      <TopBar title="Aura" />
-      
-      <main ref={scrollRef} className="flex-1 overflow-y-auto px-container-margin py-6 space-y-8 hide-scrollbar">
-        <AnimatePresence>
-          {messages.map((msg) => (
-            <motion.div
-              key={msg.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-            >
-              {msg.role === 'aura' && (
-                <div className="flex items-center gap-2 mb-2 pl-2">
-                  <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary">
-                    <Sparkles className="w-3 h-3 fill-current" />
-                  </div>
-                  <span className="text-label-caps text-on-surface-variant font-bold uppercase tracking-widest">Aura</span>
-                </div>
-              )}
-              
-              <div 
-                className={`max-w-[90%] p-6 rounded-3xl shadow-sm ${
-                  msg.role === 'user' 
-                    ? 'bg-surface-container-high text-on-surface rounded-br-sm' 
-                    : 'bg-surface text-on-surface rounded-bl-sm card-shadow border border-surface-container/50'
-                }`}
-              >
-                <div className="text-body-lg leading-relaxed" dangerouslySetInnerHTML={{ __html: msg.text }} />
-                
-                {msg.hasChart && (
-                  <div className="mt-6 p-4 bg-surface-container-low rounded-2xl space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-title-md">Projection Shift</span>
-                      <span className="px-2 py-1 bg-primary/10 text-primary text-label-caps font-bold rounded-full">+1.5 mo</span>
-                    </div>
-                    <div className="h-20 flex items-end justify-between gap-1 px-2">
-                      {[20, 40, 65, 85, 100, 70].map((h, i) => (
-                        <motion.div 
-                          key={i}
-                          initial={{ height: 0 }}
-                          animate={{ height: `${h}%` }}
-                          className={`w-full rounded-t-full ${i === 4 ? 'bg-primary' : 'bg-primary-container'}`}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex justify-between text-label-caps text-on-surface-variant">
-                      <span>Now</span>
-                      <span>Target</span>
-                    </div>
-                  </div>
+    <div>
+      <TopBar title="Coach" subtitle="Grounded financial memory" />
+      <main className="grid gap-4 px-container-margin pb-10 lg:grid-cols-[1.1fr_.9fr]">
+        <section className="min-w-0 rounded-[2rem] border border-surface-container bg-surface p-5 card-shadow">
+          <div className="mb-5 flex items-center gap-3">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary"><Brain /></div>
+            <div><p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Aura Coach</p><h2 className="text-title-md font-black">Ask from verified context</h2></div>
+          </div>
+          <div className="grid min-h-[420px] content-start gap-3">
+            {coachMessages.map((message) => (
+              <article key={message.id || `${message.created_at}-${message.content}`} className={`max-w-[86%] min-w-0 rounded-3xl p-4 ${message.role === 'user' ? 'ml-auto bg-on-surface text-surface' : 'bg-surface-container-low'}`}>
+                <p className="text-[11px] font-black uppercase tracking-widest opacity-60">{message.role === 'user' ? 'You' : 'Aura'}</p>
+                <p className="mt-2 break-words leading-relaxed">{message.content}</p>
+                {message.confidence !== null && message.confidence !== undefined && <p className="mt-2 text-body-sm opacity-70">{message.confidence}% grounded confidence</p>}
+                {Array.isArray(message.facts) && message.facts.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">{message.facts.map((fact: string) => <span key={fact} className="max-w-full break-words rounded-full bg-white/70 px-2 py-1 text-[11px] font-bold text-on-surface-variant">{fact}</span>)}</div>
                 )}
+              </article>
+            ))}
+            {!coachMessages.length && (
+              <div className="rounded-3xl bg-surface-container-low p-6">
+                <p className="font-black">Grounding status</p>
+                <p className="mt-2 text-on-surface-variant">{model.ready ? `Forecast context is available with ${model.confidence}% confidence.` : model.reasons[0]}</p>
               </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-        {isTyping && <div className="text-label-caps text-secondary pl-2 animate-pulse">Aura is thinking...</div>}
-      </main>
+            )}
+          </div>
+          {error && <p className="mt-4 rounded-2xl bg-error-container p-3 text-body-sm font-bold text-error">{error}</p>}
+          <div className="mt-5 flex gap-2">
+            <input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && ask()} placeholder="Ask about forecasts, recurring charges, goals, or UPI/GPay imports" className="h-14 min-w-0 flex-1 rounded-2xl bg-surface-container-low px-4 outline-none" />
+            <button disabled={loading} onClick={() => ask()} className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-on-primary disabled:opacity-50"><ArrowUp /></button>
+          </div>
+        </section>
 
-      {/* Input Area */}
-      <div className="px-container-margin pb-32 pt-4 bg-gradient-to-t from-background via-background to-transparent sticky bottom-0">
-        <div className="flex gap-2 overflow-x-auto pb-4 hide-scrollbar">
-          {['Predict my balance', 'Explain my burn rate', 'Japan travel goal'].map((chip) => (
-            <button 
-              key={chip}
-              onClick={() => setInput(chip)}
-              className="shrink-0 px-4 py-2 bg-surface rounded-full border border-surface-container text-body-sm whitespace-nowrap hover:bg-surface-container transition-colors"
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
-        
-        <div className="bg-surface rounded-full p-2 flex items-center card-shadow border-2 border-transparent focus-within:border-primary-container/30 transition-all">
-          <button className="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors">
-            <PlusCircle className="w-6 h-6" />
-          </button>
-          <input 
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            type="text" 
-            placeholder="Ask Aura..." 
-            className="flex-1 bg-transparent border-none focus:ring-0 text-body-lg px-2"
-          />
-          <button 
-            onClick={handleSend}
-            className="w-10 h-10 flex items-center justify-center bg-primary text-on-primary rounded-full shadow-lg active:scale-95 transition-all"
-          >
-            <ArrowUp className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
+        <aside className="grid min-w-0 content-start gap-4">
+          <div className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
+            <div className="flex items-center gap-3"><Database className="h-6 w-6 text-primary" /><h2 className="text-title-md font-black">Context inventory</h2></div>
+            <div className="mt-5 grid gap-3">
+              <Fact label="Transactions" value={String(transactions.length)} />
+              <Fact label="Goals" value={String(goals.length)} />
+              <Fact label="Recurring patterns" value={String(model.recurring.length)} />
+              <Fact label="Forecast" value={model.ready ? `${model.confidence}%` : 'Blocked'} />
+            </div>
+          </div>
+          <div className="rounded-[2rem] bg-primary/10 p-5 text-primary">
+            <div className="flex gap-3"><ShieldCheck className="h-5 w-5 shrink-0" /><p className="text-body-sm font-bold leading-relaxed">Coach responses must cite stored transactions, goals, forecasts, or import status. Unsupported claims are refused.</p></div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {['Predict my balance', 'Explain my burn rate', 'What did GPay import?', 'What recurring charges exist?'].map((chip) => (
+              <button key={chip} onClick={() => ask(chip)} className="rounded-full bg-surface px-4 py-2 text-body-sm font-bold card-shadow">{chip}</button>
+            ))}
+          </div>
+        </aside>
+      </main>
     </div>
   );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center justify-between rounded-2xl bg-surface-container-low p-4"><span className="font-bold text-on-surface-variant">{label}</span><strong>{value}</strong></div>;
+}
+
+function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, ms: number) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), ms);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => window.clearTimeout(timer));
 }

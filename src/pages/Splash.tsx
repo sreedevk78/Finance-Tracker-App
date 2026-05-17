@@ -19,7 +19,7 @@ export default function Splash({ onFinish }: { onFinish: () => void }) {
         <div className="w-24 h-24 bg-primary-container rounded-[2.5rem] flex items-center justify-center glow-shadow">
           <Sparkles className="w-12 h-12 text-on-primary-container fill-current" />
         </div>
-        <h1 className="text-display-lg font-bold text-primary tracking-tighter">Aura</h1>
+        <h1 className="text-display-lg font-bold text-primary tracking-normal">Aura</h1>
         <div className="flex gap-1.5">
           {[0, 1, 2].map((i) => (
             <motion.div

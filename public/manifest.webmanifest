@@ -1,0 +1,43 @@
+{
+  "name": "Aura Financial Intelligence",
+  "short_name": "Aura",
+  "description": "Grounded finance tracking, UPI/GPay receipt import, forecasts, goals, and coaching.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#101522",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Import UPI receipt",
+      "short_name": "Import",
+      "url": "/activity#import-upi",
+      "description": "Paste or share a UPI/GPay receipt into Aura"
+    },
+    {
+      "name": "Add transaction",
+      "short_name": "Add",
+      "url": "/activity#manual",
+      "description": "Add a verified manual transaction"
+    }
+  ],
+  "share_target": {
+    "action": "/shared-upi",
+    "method": "POST",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}

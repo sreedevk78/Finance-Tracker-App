@@ -1,202 +1,141 @@
+import { AlertTriangle, ArrowRight, CheckCircle2, IndianRupee, Plus, ShieldCheck, Sparkles, type LucideIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import TopBar from '../components/layout/TopBar';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Bolt, Plus, Laptop, Coffee, Dumbbell, AlertCircle, Sparkles, X, ChevronRight, Wallet } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { useAuth } from '../contexts/AuthContext';
+import { CATEGORIES, formatMoney, signedMoney } from '../domain/finance';
+import type { Workspace } from '../lib/ui';
 
-export default function Dashboard() {
-  const { user } = useAuth();
-  const [profile, setProfile] = useState<any>(null);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [primaryGoal, setPrimaryGoal] = useState<any>(null);
-  const [showAddTx, setShowAddTx] = useState(false);
-  const [newTx, setNewTx] = useState({ amount: '', merchantName: '', categoryId: 'food' });
-
-  useEffect(() => {
-    if (!user) return;
-
-    // Fetch Profile
-    getDoc(doc(db, 'users', user.uid)).then(snap => setProfile(snap.data()));
-
-    // Fetch Recent Transactions
-    const tq = query(collection(db, 'users', user.uid, 'transactions'), orderBy('date', 'desc'), limit(5));
-    const unsubT = onSnapshot(tq, snap => {
-      setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    // Fetch Primary Goal
-    const gq = query(collection(db, 'users', user.uid, 'goals'), limit(1));
-    const unsubG = onSnapshot(gq, snap => {
-      if (!snap.empty) setPrimaryGoal({ id: snap.docs[0].id, ...snap.docs[0].data() });
-    });
-
-    return () => { unsubT(); unsubG(); };
-  }, [user]);
-
-  const handleAddTx = async () => {
-    if (!user || !newTx.amount || !newTx.merchantName) return;
-    try {
-      const amountNum = Number(newTx.amount);
-      const txId = Date.now().toString();
-      await setDoc(doc(db, 'users', user.uid, 'transactions', txId), {
-        userId: user.uid,
-        amount: amountNum,
-        merchantName: newTx.merchantName,
-        categoryId: newTx.categoryId,
-        type: 'debit',
-        date: new Date(),
-        createdAt: new Date(),
-        isRecurring: false
-      });
-
-      // Update goal if exists
-      if (primaryGoal) {
-        await updateDoc(doc(db, 'users', user.uid, 'goals', primaryGoal.id), {
-          currentAmount: increment(-amountNum) // Simplified: spending reduces local goal savings in this demo context
-        });
-      }
-
-      setShowAddTx(false);
-      setNewTx({ amount: '', merchantName: '', categoryId: 'food' });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const progress = primaryGoal ? Math.round((primaryGoal.currentAmount / primaryGoal.targetAmount) * 100) : 0;
+export default function Dashboard({ workspace }: { workspace: Workspace }) {
+  const { account, transactions, goals, model } = workspace;
+  const primary = model.insights[0];
+  const linkedUpi = transactions.filter((tx) => tx.source.includes('upi') || tx.source.includes('gpay')).length;
 
   return (
-    <div className="bg-background min-h-screen">
-      <TopBar title="Aura" />
-      
-      <main className="px-container-margin flex flex-col gap-lg pb-10">
-        {/* Savings Gauge */}
-        <section className="flex flex-col items-center mt-sm">
-          <div className="relative w-full max-w-[280px] aspect-[2/1] overflow-hidden mb-sm text-overlay">
-            <div className="absolute inset-0 flex justify-between items-end gap-1 px-4">
-              {[0, 1, 2, 3, 4, 5].map((i) => {
-                const isActive = (i / 5) * 100 <= progress;
-                return (
-                  <div 
-                    key={i} 
-                    className={`w-full h-[120%] rounded-t-full origin-bottom transform ${
-                      i === 0 ? '-rotate-[75deg]' : i === 1 ? '-rotate-[45deg]' : i === 2 ? '-rotate-[15deg]' : i === 3 ? 'rotate-[15deg]' : i === 4 ? 'rotate-[45deg]' : 'rotate-[75deg]'
-                    } ${isActive ? 'bg-primary-container' : 'bg-surface-container-highest'}`}
-                  />
-                );
-              })}
-            </div>
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[70%] h-[140%] bg-background rounded-full"></div>
-          </div>
-          <div className="text-center mt-[-20px] relative z-10">
-            <Bolt className="w-5 h-5 text-primary-container mx-auto mb-1 fill-current" />
-            <p className="font-label-caps text-on-surface-variant uppercase tracking-wider mb-2">
-              {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short' }).toUpperCase()}
-            </p>
-            <h2 className="text-display-lg tracking-tighter mb-1">
-              {profile?.currencySymbol || '$'}{(primaryGoal?.currentAmount || 0).toLocaleString()}
-            </h2>
-            <p className="text-body-sm text-primary-container">Goal {profile?.currencySymbol || '$'}{(primaryGoal?.targetAmount || 0).toLocaleString()}</p>
-          </div>
-          <button 
-            onClick={() => setShowAddTx(true)}
-            className="w-full max-w-[280px] h-12 mt-6 rounded-xl bg-surface-container-low flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors"
-          >
-            <Plus className="w-6 h-6" />
-          </button>
-        </section>
-
-        {/* Morning Insight */}
-        {transactions.length >= 3 ? (
-          <section className="bg-surface rounded-3xl p-6 card-shadow border border-surface-container/50">
-            <div className="flex items-start gap-4">
-              <div className="p-2 bg-primary-fixed rounded-xl flex items-center justify-center">
-                <Sparkles className="w-6 h-6 text-primary fill-current" />
-              </div>
+    <div>
+      <TopBar title="Aura" subtitle="Command center" />
+      <main className="px-container-margin pb-10">
+        <section className="grid gap-4 lg:grid-cols-[1.12fr_.88fr]">
+          <div className="overflow-hidden rounded-[2.25rem] bg-on-surface p-7 text-surface shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-title-md mb-1">Morning Insight</h3>
-                <p className="text-body-sm text-on-surface-variant leading-relaxed">
-                  You're on track to save <strong className="text-primary">{profile?.currencySymbol || '$'}450</strong> more this month based on your current routine.
+                <p className="text-label-caps font-black uppercase tracking-widest text-surface/55">
+                  {model.ready ? '30-day projected balance' : 'Verified balance anchor'}
+                </p>
+                <h2 className="mt-3 break-words text-5xl font-black leading-[0.94] tracking-normal sm:text-6xl lg:text-7xl">
+                  {formatMoney(model.projected, account || undefined)}
+                </h2>
+                <p className="mt-5 max-w-2xl text-body-lg leading-relaxed text-surface/70">
+                  {model.ready
+                    ? `Confidence ${model.confidence}% with range ${formatMoney(model.low, account || undefined)} to ${formatMoney(model.high, account || undefined)}.`
+                    : model.reasons[0]}
                 </p>
               </div>
+              <Link to="/activity" className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-surface text-on-surface">
+                <Plus className="h-6 w-6" />
+              </Link>
             </div>
-          </section>
-        ) : (
-          <section className="bg-surface-container-low rounded-3xl p-6 border border-dashed border-surface-container">
-            <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
-                <Sparkles className="w-6 h-6 opacity-20" />
-              </div>
-              <div>
-                <h3 className="text-body-md font-bold text-on-surface">Intelligence Warming Up</h3>
-                <p className="text-body-sm text-on-surface-variant">Add a few more transactions to unlock behavior-aware insights.</p>
-              </div>
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              <Metric label="Health" value={model.health ? `${model.health}/100` : 'Gated'} />
+              <Metric label="Cashflow" value={signedMoney(model.monthNet, account || undefined)} />
+              <Metric label="Runway" value={model.runwayDays === null ? 'Stable' : model.runwayDays ? `${model.runwayDays}d` : 'n/a'} />
             </div>
-          </section>
-        )}
+          </div>
 
-        {/* Recent Intelligence */}
-        <section className="flex flex-col gap-4">
-          <h3 className="text-title-md px-2">Recent Intelligence</h3>
-          <div className="flex flex-col gap-4">
-            {transactions.map((tx) => (
-              <div key={tx.id} className="bg-surface rounded-3xl p-5 card-shadow flex justify-between items-center border border-surface-container/50">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full overflow-hidden bg-surface-container border-2 border-surface-container flex items-center justify-center text-on-surface-variant">
-                    {tx.categoryId === 'food' ? <Coffee className="w-6 h-6" /> : <Laptop className="w-6 h-6" />}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-title-md leading-tight">{tx.merchantName}</span>
-                    <span className="text-body-sm text-on-surface-variant">
-                      {tx.date?.seconds ? new Date(tx.date.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
-                    </span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-headline-lg-mobile leading-tight">-{profile?.currencySymbol || '$'}{tx.amount.toLocaleString()}</span>
-                </div>
+          <div className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
+            <div className="flex items-center justify-between">
+              <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Primary signal</p>
+              <span className={`rounded-full px-3 py-1 text-[11px] font-black uppercase ${primary.severity === 'high' ? 'bg-error-container text-error' : 'bg-primary/10 text-primary'}`}>
+                {primary.confidence}% confidence
+              </span>
+            </div>
+            <h3 className="mt-4 text-title-md font-black">{primary.title}</h3>
+            <p className="mt-3 text-body-md leading-relaxed text-on-surface-variant">{primary.body}</p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {primary.facts.map((fact) => <span key={fact} className="rounded-full bg-surface-container-low px-3 py-2 text-[11px] font-bold text-on-surface-variant">{fact}</span>)}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card icon={IndianRupee} label="This month spend" value={formatMoney(model.monthSpend, account || undefined)} sub="Observed debits only" />
+          <Card icon={Sparkles} label="Recurring load" value={formatMoney(model.recurringLoad, account || undefined)} sub={`${model.recurring.length} detected pattern${model.recurring.length === 1 ? '' : 's'}`} />
+          <Card icon={ShieldCheck} label="UPI/GPay linked" value={String(linkedUpi)} sub="Reference-backed imports" />
+          <Card icon={CheckCircle2} label="Active goals" value={String(goals.length)} sub="Protected outcomes" />
+        </section>
+
+        <section className="mt-4 grid gap-4 lg:grid-cols-[.95fr_1.05fr]">
+          <div className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
+            <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Forecast gate</p>
+            <div className="mt-5 grid gap-3">
+              <Gate ok={Boolean(account?.balance_known)} label="Balance anchor" detail={account?.balance_known ? formatMoney(account.balance, account) : 'Missing'} />
+              <Gate ok={transactions.length >= 5} label="Transactions" detail={`${transactions.length} / 5 minimum`} />
+              <Gate ok={model.coverageDays >= 7} label="History" detail={`${model.coverageDays} / 7 calendar days`} />
+              <Gate ok={model.activeDays >= 2} label="Active days" detail={`${model.activeDays} / 2 active days`} />
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Recent ledger</p>
+                <h3 className="mt-1 text-title-md font-black">Latest activity</h3>
               </div>
-            ))}
-            {transactions.length === 0 && (
-              <div className="p-10 text-center text-on-surface-variant bg-surface rounded-3xl border border-dashed border-surface-container">
-                No recent activity.
-              </div>
-            )}
+              <Link to="/activity" className="flex items-center gap-1 rounded-full bg-surface-container-low px-3 py-2 text-body-sm font-black">
+                Manage <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+            <div className="mt-5 grid gap-3">
+              {transactions.slice(0, 5).map((tx) => (
+                <div key={tx.id} className="flex items-center justify-between rounded-2xl bg-surface-container-low p-4">
+                  <div>
+                    <p className="font-black">{tx.merchant_name}</p>
+                    <p className="text-body-sm text-on-surface-variant">{CATEGORIES[tx.category_id]?.label || 'Other'} · {tx.date}</p>
+                  </div>
+                  <span className={`font-black ${tx.type === 'credit' ? 'text-primary' : 'text-error'}`}>
+                    {tx.type === 'credit' ? '+' : '-'}{formatMoney(tx.amount, account || undefined)}
+                  </span>
+                </div>
+              ))}
+              {!transactions.length && (
+                <div className="rounded-2xl border border-dashed border-surface-container p-8 text-center text-on-surface-variant">
+                  Add real transactions or import UPI/GPay receipts to unlock intelligence.
+                </div>
+              )}
+            </div>
           </div>
         </section>
       </main>
+    </div>
+  );
+}
 
-      {/* Add Transaction Modal */}
-      <AnimatePresence>
-        {showAddTx && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAddTx(false)} className="fixed inset-0 bg-on-background/20 backdrop-blur-sm z-[60]" />
-            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className="fixed bottom-0 left-0 w-full bg-background rounded-t-[40px] p-container-margin pt-10 z-[70] shadow-2xl">
-              <div className="w-12 h-1.5 bg-surface-container rounded-full mx-auto mb-8" />
-              <div className="space-y-6 max-w-sm mx-auto">
-                <h3 className="text-display-lg-mobile font-bold tracking-tight">Manual Entry</h3>
-                <div className="space-y-4">
-                  <div className="relative">
-                    <span className="absolute left-6 top-1/2 -translate-y-1/2 text-title-md">{profile?.currencySymbol || '$'}</span>
-                    <input type="number" value={newTx.amount} onChange={e => setNewTx({...newTx, amount: e.target.value})} placeholder="0.00" className="w-full h-16 rounded-2xl bg-surface-container-low pl-12 pr-6 text-title-md border-none focus:ring-2 focus:ring-primary-container" />
-                  </div>
-                  <input value={newTx.merchantName} onChange={e => setNewTx({...newTx, merchantName: e.target.value})} placeholder="Merchant Name" className="w-full h-14 rounded-2xl bg-surface-container-low px-4 text-body-lg border-none focus:ring-2 focus:ring-primary-container" />
-                  <select value={newTx.categoryId} onChange={e => setNewTx({...newTx, categoryId: e.target.value})} className="w-full h-14 rounded-2xl bg-surface-container-low px-4 text-body-lg border-none outline-none">
-                    <option value="food">Food & Drink</option>
-                    <option value="shopping">Shopping</option>
-                    <option value="travel">Travel</option>
-                    <option value="tech">Technology</option>
-                  </select>
-                </div>
-                <button onClick={handleAddTx} className="w-full bg-primary text-on-primary h-16 rounded-2xl font-bold shadow-lg">SAVE TRANSACTION</button>
-                <div className="h-10" />
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/10 p-4">
+      <p className="text-[11px] font-black uppercase tracking-widest text-white/55">{label}</p>
+      <p className="mt-2 text-title-md font-black">{value}</p>
+    </div>
+  );
+}
+
+function Card({ icon: Icon, label, value, sub }: { icon: LucideIcon; label: string; value: string; sub: string }) {
+  return (
+    <article className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
+      <Icon className="mb-5 h-6 w-6 text-primary" />
+      <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">{label}</p>
+      <h3 className="mt-2 text-display-lg-mobile font-black">{value}</h3>
+      <p className="mt-2 text-body-sm text-on-surface-variant">{sub}</p>
+    </article>
+  );
+}
+
+function Gate({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl bg-surface-container-low p-4">
+      {ok ? <CheckCircle2 className="h-5 w-5 text-primary" /> : <AlertTriangle className="h-5 w-5 text-error" />}
+      <div>
+        <p className="font-black">{label}</p>
+        <p className="text-body-sm text-on-surface-variant">{detail}</p>
+      </div>
     </div>
   );
 }

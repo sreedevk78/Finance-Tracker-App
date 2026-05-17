@@ -1,88 +1,93 @@
+import { useState } from 'react';
+import { Database, Download, KeyRound, Link2, LogOut, ShieldCheck, Wallet, type LucideIcon } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
-import { User, Landmark, Fingerprint, Keyboard, Brain, Download, BellRing, DollarSign, ChevronRight } from 'lucide-react';
-import { auth } from '../lib/firebase';
+import { CURRENCIES, currencyInfo, formatMoney } from '../domain/finance';
+import { useAuth } from '../contexts/AuthContext';
+import type { Workspace } from '../lib/ui';
 
-export default function Settings() {
-  const sections = [
-    {
-      title: 'Account',
-      items: [
-        { icon: User, label: 'Profile', sub: 'Personal details & contact info' },
-        { icon: Landmark, label: 'Linked Banks', sub: 'Manage active connections' },
-      ]
-    },
-    {
-      title: 'Security',
-      items: [
-        { icon: Fingerprint, label: 'Biometrics', sub: 'Face ID & Touch ID', toggle: true },
-        { icon: Keyboard, label: 'PIN & Passcode', sub: 'Update app access code' },
-      ]
-    },
-    {
-      title: 'Privacy',
-      items: [
-        { icon: Brain, label: 'AI Memory Preferences', sub: 'Manage what Coach remembers' },
-        { icon: Download, label: 'Data Export', sub: 'Download your history' },
-      ]
-    },
-    {
-      title: 'General',
-      items: [
-        { icon: BellRing, label: 'Notifications', sub: 'Alerts & summaries' },
-        { icon: DollarSign, label: 'Currency', sub: 'USD ($)' },
-      ]
-    }
-  ];
+export default function Settings({ workspace }: { workspace: Workspace }) {
+  const { signOut } = useAuth();
+  const { profile, account, transactions, goals, imports, model, updateAccount } = workspace;
+  const [currency, setCurrency] = useState(account?.currency || 'INR');
+  const [balance, setBalance] = useState(String(account?.balance || 0));
+  const [balanceKnown, setBalanceKnown] = useState(Boolean(account?.balance_known));
+  const info = currencyInfo(currency);
+
+  async function saveAccount() {
+    await updateAccount({ currency: info.code, currency_symbol: info.symbol, balance: Number(balance || 0), balance_known: balanceKnown });
+  }
+
+  function exportCsv() {
+    const header = 'date,type,merchant,category,amount,source,external_ref,vpa,note';
+    const rows = transactions.map((tx) => [tx.date, tx.type, tx.merchant_name, tx.category_id, tx.amount, tx.source, tx.external_ref || '', tx.vpa || '', tx.note || ''].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','));
+    const url = URL.createObjectURL(new Blob([[header, ...rows].join('\n')], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `aura-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
-    <div className="bg-background min-h-screen">
-      <TopBar title="Settings" />
-      
-      <main className="px-container-margin flex flex-col gap-8 pb-10">
-        <div className="mt-4">
-          <h2 className="text-display-lg-mobile font-bold tracking-tight mb-2">Settings & Security</h2>
-          <p className="text-body-lg text-on-surface-variant">Manage your account preferences and secure your financial data.</p>
-        </div>
+    <div>
+      <TopBar title="Settings" subtitle="Security and data" />
+      <main className="grid gap-4 px-container-margin pb-10 lg:grid-cols-[.9fr_1.1fr]">
+        <section className="rounded-[2rem] bg-on-surface p-7 text-surface shadow-2xl">
+          <p className="text-label-caps font-black uppercase tracking-widest text-surface/55">Workspace</p>
+          <h1 className="mt-3 text-display-lg-mobile font-black">{profile?.full_name || 'Aura workspace'}</h1>
+          <p className="mt-3 text-surface/70">{profile?.email}</p>
+          <div className="mt-8 grid gap-3">
+            <Metric icon={ShieldCheck} label="Forecast status" value={model.ready ? `${model.confidence}% confidence` : 'Data gated'} />
+            <Metric icon={Database} label="Transactions" value={String(transactions.length)} />
+            <Metric icon={Link2} label="UPI/GPay imports" value={String(transactions.filter((tx) => tx.source.includes('upi') || tx.source.includes('gpay')).length)} />
+          </div>
+          <button onClick={signOut} className="mt-8 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-surface font-black text-on-surface"><LogOut className="h-5 w-5" /> Sign out</button>
+        </section>
 
-        {sections.map((section) => (
-          <section key={section.title} className="flex flex-col gap-4">
-            <h3 className="text-label-caps text-on-surface-variant uppercase tracking-widest pl-4 font-bold">{section.title}</h3>
-            
-            <div className="bg-surface rounded-3xl p-2 card-shadow border border-surface-container/50">
-              {section.items.map((item, i) => (
-                <div key={item.label}>
-                  <div className="flex items-center justify-between p-4 rounded-2xl hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.98]">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-background flex items-center justify-center text-primary">
-                        <item.icon className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <p className="text-title-md leading-tight">{item.label}</p>
-                        <p className="text-body-sm text-on-surface-variant mt-1">{item.sub}</p>
-                      </div>
-                    </div>
-                    {item.toggle ? (
-                      <div className="w-12 h-6 bg-primary-container rounded-full flex items-center px-1 justify-end">
-                        <div className="w-4 h-4 bg-white rounded-full shadow-sm"></div>
-                      </div>
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-outline-variant" />
-                    )}
-                  </div>
-                  {i < section.items.length - 1 && <div className="h-[1px] bg-surface-container mx-4 my-1 opacity-50" />}
-                </div>
-              ))}
+        <section className="grid gap-4">
+          <div className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
+            <div className="mb-5 flex items-center gap-3"><Wallet className="h-6 w-6 text-primary" /><h2 className="text-title-md font-black">Balance anchor</h2></div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="h-14 rounded-2xl bg-surface-container-low px-4 outline-none">
+                {Object.values(CURRENCIES).map((item) => <option key={item.code} value={item.code}>{item.code} ({item.symbol})</option>)}
+              </select>
+              <input value={balance} onChange={(e) => setBalance(e.target.value)} inputMode="decimal" className="h-14 rounded-2xl bg-surface-container-low px-4 outline-none" />
+              <label className="flex items-center gap-3 rounded-2xl bg-surface-container-low p-4 text-body-sm font-bold sm:col-span-2">
+                <input type="checkbox" checked={balanceKnown} onChange={(e) => setBalanceKnown(e.target.checked)} /> This balance is verified.
+              </label>
+              <button onClick={saveAccount} className="h-14 rounded-2xl bg-primary font-black text-on-primary sm:col-span-2">Save account</button>
             </div>
-          </section>
-        ))}
+            <p className="mt-4 text-body-sm text-on-surface-variant">Current anchor: {formatMoney(account?.balance || 0, account || undefined)}</p>
+          </div>
 
-        <button 
-          onClick={() => auth.signOut()}
-          className="w-full py-4 text-error font-title-md bg-surface rounded-2xl border border-error/20 card-shadow mt-4"
-        >
-          Sign Out
-        </button>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Action icon={Download} title="Export data" copy="Download the transaction ledger as CSV." action={exportCsv} />
+            <Action icon={KeyRound} title="Provider status" copy={`${imports.length} import logs. Supabase RLS enabled by schema.`} />
+          </div>
+
+          <div className="rounded-[2rem] border border-surface-container bg-surface p-6 card-shadow">
+            <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Production constraints</p>
+            <div className="mt-4 grid gap-3">
+              <Constraint ok label="Supabase auth/data" detail="Configured through environment keys and RLS schema." />
+              <Constraint ok label="GPay/UPI import" detail="Receipt/SMS/CSV linking with UTR/RRN dedupe." />
+              <Constraint label="Direct Google Pay history sync" detail="Not exposed as a public consumer API; use AA/PSP provider for live sync." />
+              <Constraint label="Native biometrics" detail="Requires Capacitor/React Native shell; not available in this web repo." />
+            </div>
+          </div>
+        </section>
       </main>
     </div>
   );
+}
+
+function Metric({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return <div className="rounded-3xl bg-white/10 p-4"><Icon className="mb-3 h-5 w-5" /><p className="text-[11px] font-black uppercase tracking-widest text-white/55">{label}</p><p className="mt-1 font-black">{value}</p></div>;
+}
+
+function Action({ icon: Icon, title, copy, action }: { icon: LucideIcon; title: string; copy: string; action?: () => void }) {
+  return <button onClick={action} className="rounded-[2rem] border border-surface-container bg-surface p-6 text-left card-shadow"><Icon className="mb-5 h-6 w-6 text-primary" /><h3 className="font-black">{title}</h3><p className="mt-2 text-body-sm text-on-surface-variant">{copy}</p></button>;
+}
+
+function Constraint({ ok = false, label, detail }: { ok?: boolean; label: string; detail: string }) {
+  return <div className="rounded-2xl bg-surface-container-low p-4"><p className={`font-black ${ok ? 'text-primary' : 'text-error'}`}>{label}</p><p className="mt-1 text-body-sm text-on-surface-variant">{detail}</p></div>;
 }

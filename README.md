@@ -1,20 +1,89 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Aura Financial Intelligence
 
-# Run and deploy your AI Studio app
+Aura is a Supabase-backed financial intelligence app focused on real personal cashflow, Indian UPI/GPay capture, deterministic forecasting, goals, and grounded coaching.
 
-This contains everything you need to run your app locally.
+The app intentionally refuses fake financial output:
 
-View your app in AI Studio: https://ai.studio/apps/77c7f268-b66c-47b8-9f98-edda40644d2b
+- no seeded balances
+- no fabricated forecasts
+- no fake subscriptions
+- no hallucinated coach claims
+- no silent fallback advice
+- no direct Google Pay history sync claims
 
-## Run Locally
+## Core Product
 
-**Prerequisites:**  Node.js
+- Supabase Auth with Google OAuth and email magic-link sign-in.
+- Supabase Postgres source of truth with Row Level Security for user-owned profiles, accounts, transactions, goals, imports, coach messages, and AI memory.
+- Adaptive onboarding for students, freelancers, salaried professionals, business owners, and custom financial lifestyles.
+- Optional income and verified zero-balance support.
+- Manual transaction entry for exact control.
+- UPI/GPay import from receipt text, SMS/bank notification text, UTR/RRN, VPA, or statement narration.
+- Bulk UPI/SMS paste to reduce daily manual entry friction.
+- Bank/wallet CSV import and CSV export.
+- PWA installability and Android share-target support so copied receipt/SMS text can open directly in Aura’s UPI import panel.
+- Deterministic forecast engine with data-quality gates, confidence intervals, transaction-density checks, recurring detection, anomaly detection, category breakdowns, and confidence scoring.
+- Grounded coach endpoint that answers from Supabase financial facts and deterministic model output; Gemini is optional and guarded.
 
+## Google Pay / UPI Reality
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Google Pay India public APIs are merchant payment APIs, not a consumer transaction-history feed. Google’s Omnichannel API documentation says it can be used only after contact by the Google Business Team for partner sign-up. NPCI UPI status/data APIs are available through banks/PSPs, not arbitrary consumer apps.
+
+Aura therefore implements the real non-scraping path available now:
+
+1. Share/copy GPay receipt or UPI SMS text into Aura.
+2. Aura parses amount, date, direction, counterparty, VPA, and UPI reference/UTR/RRN.
+3. Aura rejects entries without enough grounding.
+4. Aura deduplicates reference-linked imports.
+
+For true automatic transaction sync in India, integrate an RBI Account Aggregator/FIU partner or PSP/bank provider with user consent.
+
+## Setup
+
+Create `.env.local`:
+
+```bash
+VITE_SUPABASE_URL="https://YOUR_PROJECT.supabase.co"
+VITE_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY"
+GEMINI_API_KEY=""
+GEMINI_MODEL="gemini-2.0-flash"
+APP_URL="http://localhost:3000"
+PORT="3000"
+HOST="127.0.0.1"
+```
+
+Apply the database migration:
+
+```bash
+psql "$DIRECT_URL" -f supabase/migrations/20260517183000_initial_finance_platform.sql
+```
+
+Run locally:
+
+```bash
+npm install
+npm run dev
+```
+
+Production build:
+
+```bash
+npm run lint
+npm test
+npm run build
+npm start
+```
+
+## Verification Checklist
+
+- Supabase health endpoint reports configured.
+- RLS is enabled on all app tables.
+- Anonymous REST reads return no user data.
+- Onboarding does not require salary.
+- Forecast remains blocked until data gates pass.
+- Manual transaction add/delete works.
+- UPI/GPay single import accepts reference-backed receipts and rejects ungrounded text.
+- Bulk UPI/SMS paste imports valid entries and reports rejected rows.
+- CSV import/export works.
+- Coach answers cite stored facts or explains missing context.
+- Mobile layout has no horizontal overflow.

@@ -1,8 +1,0 @@
-{
-  "name": "Aura",
-  "description": "AI-powered financial intelligence platform for predictive insights, coaching, and proactive guidance.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

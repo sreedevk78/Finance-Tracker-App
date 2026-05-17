@@ -1,173 +1,184 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Download, FileText, Plus, Search, Trash2, UploadCloud, type LucideIcon } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Laptop as LaptopIcon, Coffee as CoffeeIcon, Dumbbell as FitnessIcon, Search as SearchIcon, AlertTriangle, Sparkles, CheckCircle2, ShoppingBag, Plane } from 'lucide-react';
-import { collection, query, orderBy, onSnapshot, getDoc, doc, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { useAuth } from '../contexts/AuthContext';
-import { Trash2 } from 'lucide-react';
+import { CATEGORIES, formatMoney, todayISO, type Transaction } from '../domain/finance';
+import type { Workspace } from '../lib/ui';
 
-export default function Activity() {
-  const { user } = useAuth();
-  const [profile, setProfile] = useState<any>(null);
-  const [transactions, setTransactions] = useState<any[]>([]);
+export default function Activity({ workspace }: { workspace: Workspace }) {
+  const { account, transactions, addTransaction, removeTransaction, importUpiText, importUpiBulk, importCsv } = workspace;
   const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  
-  const categories = ['All', 'Shopping', 'Food', 'Travel', 'Tech'];
-
-  const handleDelete = async (id: string) => {
-    if (!user || !window.confirm('Delete this transaction?')) return;
-    try {
-      await deleteDoc(doc(db, 'users', user.uid, 'transactions', id));
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const [category, setCategory] = useState('all');
+  const [status, setStatus] = useState('');
+  const [newTx, setNewTx] = useState<Partial<Transaction>>({ type: 'debit', amount: 0, merchant_name: '', category_id: 'food', date: todayISO(), source: 'manual' });
+  const [upiText, setUpiText] = useState('');
+  const [bulkUpiText, setBulkUpiText] = useState('');
+  const [csvText, setCsvText] = useState('');
 
   useEffect(() => {
-    if (!user) return;
-    getDoc(doc(db, 'users', user.uid)).then(snap => setProfile(snap.data()));
-    const q = query(collection(db, 'users', user.uid, 'transactions'), orderBy('date', 'desc'));
-    return onSnapshot(q, (snap) => {
-      setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-  }, [user]);
-
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(tx => {
-      const matchesSearch = tx.merchantName.toLowerCase().includes(search.toLowerCase());
-      const matchesCategory = activeCategory === 'All' || tx.categoryId.toLowerCase() === activeCategory.toLowerCase();
-      return matchesSearch && matchesCategory;
-    });
-  }, [transactions, search, activeCategory]);
-
-  const getIcon = (cat: string) => {
-    switch (cat.toLowerCase()) {
-      case 'food': return CoffeeIcon;
-      case 'shopping': return ShoppingBag;
-      case 'travel': return Plane;
-      case 'tech': return LaptopIcon;
-      default: return CheckCircle2;
+    const raw = localStorage.getItem('aura.pendingUpiShares');
+    if (!raw) return;
+    try {
+      const queue = JSON.parse(raw) as Array<{ text: string; at: string }>;
+      const next = queue[0];
+      if (next?.text) {
+        setUpiText(next.text);
+        setStatus('Shared UPI/GPay text is ready to review and import.');
+        localStorage.setItem('aura.pendingUpiShares', JSON.stringify(queue.slice(1)));
+      }
+    } catch {
+      localStorage.removeItem('aura.pendingUpiShares');
     }
-  };
+  }, []);
+
+  const filtered = useMemo(() => transactions.filter((tx) => {
+    const matchesSearch = `${tx.merchant_name} ${tx.note || ''} ${tx.external_ref || ''}`.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = category === 'all' || tx.category_id === category;
+    return matchesSearch && matchesCategory;
+  }), [category, search, transactions]);
+
+  async function saveManual() {
+    await addTransaction(newTx);
+    setNewTx({ type: 'debit', amount: 0, merchant_name: '', category_id: 'food', date: todayISO(), source: 'manual' });
+    setStatus('Transaction saved.');
+  }
+
+  async function saveUpi() {
+    await importUpiText(upiText);
+    setUpiText('');
+    setStatus('UPI/GPay transaction linked by reference.');
+  }
+
+  async function saveCsv() {
+    const result = await importCsv(csvText);
+    setCsvText('');
+    setStatus(`${result.accepted} imported, ${result.rejected} rejected.`);
+  }
+
+  async function saveBulkUpi() {
+    const result = await importUpiBulk(bulkUpiText);
+    setBulkUpiText('');
+    setStatus(`${result.accepted} UPI/GPay entries imported, ${result.rejected} rejected.`);
+  }
+
+  async function loadFile(file: File | null, target: 'bulk' | 'csv') {
+    if (!file) return;
+    if (file.size > 1_000_000) {
+      setStatus('File rejected. Import files must be under 1 MB.');
+      return;
+    }
+    const text = await file.text();
+    if (target === 'bulk') setBulkUpiText(text);
+    else setCsvText(text);
+    setStatus(`${file.name} loaded. Review before importing.`);
+  }
+
+  function exportCsv() {
+    const header = 'date,type,merchant,category,amount,source,external_ref,vpa,note';
+    const rows = transactions.map((tx) => [tx.date, tx.type, tx.merchant_name, tx.category_id, tx.amount, tx.source, tx.external_ref || '', tx.vpa || '', tx.note || ''].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','));
+    const url = URL.createObjectURL(new Blob([[header, ...rows].join('\n')], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `aura-transactions-${todayISO()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
-    <div className="bg-background min-h-screen">
-      <TopBar title="Activity" />
-      
-      <main className="px-container-margin flex flex-col gap-lg pb-10">
-        {/* Search */}
-        <section className="flex flex-col gap-4 mt-2">
-          <div className="relative w-full">
-            <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant w-5 h-5 opacity-40" />
-            <input 
-              type="text" 
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search transactions..." 
-              className="w-full h-14 pl-12 pr-4 rounded-2xl bg-surface border-none focus:ring-2 focus:ring-primary-container text-body-lg card-shadow outline-none"
-            />
-          </div>
-          <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-2">
-            {categories.map((cat) => (
-              <button 
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-6 py-2 rounded-full font-bold text-label-caps whitespace-nowrap transition-all border border-transparent ${
-                  activeCategory === cat 
-                    ? 'bg-primary text-on-primary shadow-md' 
-                    : 'bg-surface text-on-surface-variant hover:bg-surface-container border-surface-container'
-                }`}
-              >
-                {cat.toUpperCase()}
-              </button>
-            ))}
-          </div>
+    <div>
+      <TopBar title="Money" subtitle="Ledger and imports" />
+      <main className="grid gap-4 px-container-margin pb-10 xl:grid-cols-[.88fr_1.12fr]">
+        <section className="grid gap-4">
+          <Panel eyebrow="Manual verified entry" title="Add transaction" icon={Plus} id="manual">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <select value={newTx.type} onChange={(e) => setNewTx({ ...newTx, type: e.target.value as Transaction['type'] })} className="h-13 rounded-2xl bg-surface-container-low px-4 outline-none">
+                <option value="debit">Debit</option><option value="credit">Credit</option><option value="transfer">Transfer</option>
+              </select>
+              <input value={String(newTx.amount || '')} onChange={(e) => setNewTx({ ...newTx, amount: Number(e.target.value) })} inputMode="decimal" placeholder="Amount" className="h-13 rounded-2xl bg-surface-container-low px-4 outline-none" />
+              <input value={newTx.merchant_name || ''} onChange={(e) => setNewTx({ ...newTx, merchant_name: e.target.value })} placeholder="Merchant or counterparty" className="h-13 rounded-2xl bg-surface-container-low px-4 outline-none sm:col-span-2" />
+              <select value={newTx.category_id} onChange={(e) => setNewTx({ ...newTx, category_id: e.target.value })} className="h-13 rounded-2xl bg-surface-container-low px-4 outline-none">
+                {Object.entries(CATEGORIES).map(([id, c]) => <option key={id} value={id}>{c.label}</option>)}
+              </select>
+              <input type="date" value={newTx.date || todayISO()} onChange={(e) => setNewTx({ ...newTx, date: e.target.value })} className="h-13 rounded-2xl bg-surface-container-low px-4 outline-none" />
+              <textarea value={newTx.note || ''} onChange={(e) => setNewTx({ ...newTx, note: e.target.value })} placeholder="Optional receipt context" className="min-h-24 rounded-2xl bg-surface-container-low p-4 outline-none sm:col-span-2" />
+              <button onClick={saveManual} className="h-13 rounded-2xl bg-primary font-black text-on-primary sm:col-span-2">Save transaction</button>
+            </div>
+          </Panel>
+
+          <Panel eyebrow="Indian GPay / UPI" title="Link transaction" icon={UploadCloud} id="import-upi">
+            <p className="mb-4 text-body-sm leading-relaxed text-on-surface-variant">Paste a Google Pay receipt, UPI SMS, or bank narration. Aura requires amount, date, direction, and UPI reference/UTR/RRN.</p>
+            <div className="mb-4 rounded-2xl bg-primary/10 p-4 text-body-sm font-bold leading-relaxed text-primary">
+              Install Aura as a PWA, then share copied GPay/UPI receipt text or bank notification text into Aura. It lands here for review before saving.
+            </div>
+            <textarea value={upiText} onChange={(e) => setUpiText(e.target.value)} placeholder="Paid ₹250 to Cafe Nova on 17/05/2026 UPI Ref No 612345678901" className="min-h-32 w-full rounded-2xl bg-surface-container-low p-4 outline-none" />
+            <button onClick={saveUpi} className="mt-3 h-13 w-full rounded-2xl bg-on-surface font-black text-surface">Link UPI/GPay transaction</button>
+          </Panel>
+
+          <Panel eyebrow="Low-friction capture" title="Bulk paste UPI/SMS history" icon={UploadCloud}>
+            <p className="mb-4 text-body-sm leading-relaxed text-on-surface-variant">Paste multiple GPay receipts, UPI SMS messages, or bank notifications. Put each transaction on a new line when possible. Aura imports valid reference-backed entries and logs rejected rows.</p>
+            <textarea value={bulkUpiText} onChange={(e) => setBulkUpiText(e.target.value)} placeholder={'Paid ₹250 to Cafe Nova on 17/05/2026 UPI Ref No 612345678901\nPaid ₹80 to Metro on 16/05/2026 UTR 612345678902\nReceived ₹2000 from Family on 15/05/2026 RRN 612345678903'} className="min-h-40 w-full rounded-2xl bg-surface-container-low p-4 outline-none" />
+            <input type="file" accept=".txt,.csv,text/plain,text/csv" onChange={(event) => loadFile(event.target.files?.[0] || null, 'bulk')} className="mt-3 block w-full rounded-2xl bg-surface-container-low p-3 text-body-sm font-bold" />
+            <button onClick={saveBulkUpi} className="mt-3 h-13 w-full rounded-2xl bg-primary font-black text-on-primary">Parse and import bulk text</button>
+          </Panel>
+
+          <Panel eyebrow="Bank / wallet CSV" title="Statement import" icon={FileText}>
+            <textarea value={csvText} onChange={(e) => setCsvText(e.target.value)} placeholder={'date,description,debit,credit,utr\n17/05/2026,GPay to Cafe Nova,250,,612345678901'} className="min-h-32 w-full rounded-2xl bg-surface-container-low p-4 outline-none" />
+            <input type="file" accept=".csv,.txt,text/csv,text/plain" onChange={(event) => loadFile(event.target.files?.[0] || null, 'csv')} className="mt-3 block w-full rounded-2xl bg-surface-container-low p-3 text-body-sm font-bold" />
+            <button onClick={saveCsv} className="mt-3 h-13 w-full rounded-2xl bg-on-surface font-black text-surface">Import CSV</button>
+          </Panel>
         </section>
 
-        {/* Trending Intelligence */}
-        {filteredTransactions.length > 0 && filteredTransactions[0].amount > 500 && (
-          <section className="flex flex-col gap-4">
-            <h2 className="text-label-caps font-bold px-1 opacity-50 tracking-widest uppercase">Intelligence</h2>
-            <div className="bg-surface rounded-3xl p-6 card-shadow relative overflow-hidden group border border-surface-container/50">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-container to-primary"></div>
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-surface-container flex items-center justify-center text-on-surface-variant">
-                    <LaptopIcon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-title-md font-bold">{filteredTransactions[0].merchantName}</h3>
-                    <p className="text-body-sm text-secondary">Large Purchase Detected</p>
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-error-container text-on-error-container text-[10px] font-bold uppercase">
-                  <AlertTriangle className="w-3 h-3" /> UNUSUALLY LARGE
-                </span>
-              </div>
-              <div className="mb-4 text-display-lg font-bold tracking-tight">
-                {profile?.currencySymbol || '$'}{filteredTransactions[0].amount.toLocaleString()}
-              </div>
-              <div className="p-4 rounded-2xl bg-surface-container-low border border-surface-container/50">
-                <div className="flex gap-3 items-start">
-                  <Sparkles className="w-5 h-5 text-primary-container shrink-0 mt-0.5 fill-current" />
-                  <p className="text-body-sm text-on-surface-variant leading-relaxed">
-                    This purchase is significantly larger than your baseline. It might affect your goal timelines.
-                  </p>
-                </div>
-              </div>
+        <section className="rounded-[2rem] border border-surface-container bg-surface p-5 card-shadow">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Ledger</p>
+              <h2 className="text-display-lg-mobile font-black">{filtered.length} transaction{filtered.length === 1 ? '' : 's'}</h2>
             </div>
-          </section>
-        )}
-
-        {/* List */}
-        <section className="flex flex-col gap-4">
-          <div className="flex justify-between items-center px-1">
-            <h2 className="text-title-md font-bold">Recent History</h2>
-            <span className="text-body-sm text-secondary font-bold">{filteredTransactions.length} items</span>
+            <button onClick={exportCsv} className="flex h-11 items-center gap-2 rounded-2xl bg-surface-container-low px-4 font-black"><Download className="h-4 w-4" /> Export</button>
           </div>
-
-          <div className="flex flex-col gap-4">
-            {filteredTransactions.map((tx) => {
-              const Icon = getIcon(tx.categoryId);
-              return (
-                <div key={tx.id} className="bg-surface rounded-3xl p-5 card-shadow flex flex-col gap-4 border border-surface-container/50">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
-                        <Icon className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h4 className="text-title-md font-bold">{tx.merchantName}</h4>
-                        <p className="text-body-sm text-secondary">
-                          {tx.date?.seconds ? new Date(tx.date.seconds * 1000).toLocaleDateString() : 'Just now'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-title-md font-bold">-{profile?.currencySymbol || '$'}{tx.amount.toLocaleString()}</span>
-                      <button 
-                        onClick={() => handleDelete(tx.id)}
-                        className="p-2 text-on-surface-variant hover:text-error transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+          {status && <p className="mt-4 rounded-2xl bg-primary/10 p-3 text-body-sm font-bold text-primary">{status}</p>}
+          <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]">
+            <div className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-4">
+              <Search className="h-5 w-5 text-on-surface-variant" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search merchant, note, or reference" className="h-12 min-w-0 flex-1 bg-transparent outline-none" />
+            </div>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className="h-12 rounded-2xl bg-surface-container-low px-4 outline-none">
+              <option value="all">All categories</option>
+              {Object.entries(CATEGORIES).map(([id, c]) => <option key={id} value={id}>{c.label}</option>)}
+            </select>
+          </div>
+          <div className="mt-5 grid gap-3">
+            {filtered.map((tx) => (
+              <article key={tx.id} className="flex items-start justify-between gap-4 rounded-3xl bg-surface-container-low p-4">
+                <div>
+                  <p className="font-black">{tx.merchant_name}</p>
+                  <p className="mt-1 text-body-sm text-on-surface-variant">{CATEGORIES[tx.category_id]?.label || 'Other'} · {tx.date} · {tx.source}{tx.external_ref ? ` · ref ${tx.external_ref}` : ''}</p>
+                  {tx.note && <p className="mt-2 line-clamp-2 text-body-sm text-on-surface-variant">{tx.note}</p>}
                 </div>
-              );
-            })}
-
-            {filteredTransactions.length === 0 && (
-              <div className="text-center py-20 opacity-30">
-                <SearchIcon className="w-12 h-12 mx-auto mb-4" />
-                <p className="text-body-lg font-bold">No transactions found.</p>
-              </div>
-            )}
+                <div className="text-right">
+                  <p className={`font-black ${tx.type === 'credit' ? 'text-primary' : 'text-error'}`}>{tx.type === 'credit' ? '+' : '-'}{formatMoney(tx.amount, account || undefined)}</p>
+                  {tx.id && <button onClick={() => removeTransaction(tx.id!)} className="mt-2 inline-flex items-center gap-1 text-body-sm font-bold text-error"><Trash2 className="h-4 w-4" /> Delete</button>}
+                </div>
+              </article>
+            ))}
+            {!filtered.length && <div className="rounded-3xl border border-dashed border-surface-container p-12 text-center text-on-surface-variant">No matching transactions.</div>}
           </div>
         </section>
       </main>
     </div>
+  );
+}
+
+function Panel({ eyebrow, title, icon: Icon, children, id }: { eyebrow: string; title: string; icon: LucideIcon; children: React.ReactNode; id?: string }) {
+  return (
+    <section id={id} className="rounded-[2rem] border border-surface-container bg-surface p-5 card-shadow">
+      <div className="mb-5 flex items-center gap-3">
+        <div className="grid h-11 w-11 place-items-center rounded-2xl bg-primary/10 text-primary"><Icon className="h-5 w-5" /></div>
+        <div>
+          <p className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">{eyebrow}</p>
+          <h2 className="text-title-md font-black">{title}</h2>
+        </div>
+      </div>
+      {children}
+    </section>
   );
 }

@@ -1,319 +1,173 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Plane, Wallet, TrendingUp, Sparkles, User, Globe, Coins } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { ArrowLeft, ArrowRight, Check, GraduationCap, Landmark, Laptop, UserRound, WalletCards } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { CADENCES, CURRENCIES, LIFESTYLES, currencyInfo, moneyNumber, type CashflowCadence, type Lifestyle } from '../domain/finance';
+import { upsertOnboarding } from '../lib/repository';
 
-const CURRENCIES = [
-  { code: 'USD', symbol: '$', label: 'US Dollar' },
-  { code: 'EUR', symbol: '€', label: 'Euro' },
-  { code: 'GBP', symbol: '£', label: 'British Pound' },
-  { code: 'INR', symbol: '₹', label: 'Indian Rupee' },
-  { code: 'JPY', symbol: '¥', label: 'Japanese Yen' },
-  { code: 'AUD', symbol: 'A$', label: 'Australian Dollar' },
-];
+const personaIcons = {
+  student: GraduationCap,
+  freelancer: Laptop,
+  salaried: UserRound,
+  business_owner: Landmark,
+  custom: WalletCards,
+};
 
 export default function Onboarding({ onComplete }: { onComplete: () => void }) {
   const { user } = useAuth();
-  const [step, setStep] = useState(1);
-  const totalSteps = 5;
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const [data, setData] = useState({
-    ageGroup: '',
-    taxpayerStatus: '',
-    currency: 'USD',
-    currencySymbol: '$',
-    monthlyIncome: '',
-    financialPersona: '',
-    primaryGoal: '',
+    lifestyle: 'student' as Lifestyle,
+    cashflowCadence: 'allowance' as CashflowCadence,
+    currency: 'INR',
+    balance: '',
+    balanceKnown: false,
+    expectedMonthlyInflow: '',
+    firstGoalTitle: LIFESTYLES.student.defaultGoal,
+    firstGoalTarget: '10000',
   });
 
-  const personas = [
-    { id: 'saver', label: 'Disciplined Saver', desc: 'I prioritize saving and safety.' },
-    { id: 'spender', label: 'Active Spender', desc: 'I enjoy my money while I have it.' },
-    { id: 'planner', label: 'Balanced Planner', desc: 'I like a healthy mix of both.' },
-  ];
+  const currency = currencyInfo(data.currency);
+  const steps = ['Lifestyle', 'Money shape', 'Protected outcome'];
 
-  const canContinue = () => {
-    if (step === 1) return data.ageGroup && data.taxpayerStatus;
-    if (step === 2) return !!data.currency;
-    if (step === 3) return !!data.monthlyIncome;
-    if (step === 4) return !!data.financialPersona;
-    if (step === 5) return !!data.primaryGoal;
-    return false;
-  };
-
-  const handleNext = () => {
-    if (canContinue()) {
-      if (step < totalSteps) setStep(s => s + 1);
-      else handleFinish();
-    }
-  };
-
-  const selectAndNext = (update: any) => {
-    setData(prev => {
-      const next = { ...prev, ...update };
-      // Small delay for visual feedback then advance if it's a single-selection step
-      if (step === 2 || step === 4 || step === 5) {
-        setTimeout(() => setStep(s => Math.min(totalSteps, s + 1)), 300);
-      }
-      return next;
-    });
-  };
-
-  const handleFinish = async () => {
+  async function finish() {
     if (!user) return;
+    setSaving(true);
+    setError('');
     try {
-      await setDoc(doc(db, 'users', user.uid), {
-        ...data,
-        fullName: user.displayName,
-        email: user.email,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        riskTolerance: 'medium'
+      await upsertOnboarding({
+        userId: user.id,
+        fullName: user.user_metadata?.full_name || user.user_metadata?.name || null,
+        email: user.email || null,
+        lifestyle: data.lifestyle,
+        cashflowCadence: data.cashflowCadence,
+        currency: currency.code,
+        currencySymbol: currency.symbol,
+        balance: moneyNumber(data.balance),
+        balanceKnown: data.balanceKnown || data.balance.trim() !== '',
+        expectedMonthlyInflow: data.expectedMonthlyInflow.trim() ? moneyNumber(data.expectedMonthlyInflow) : null,
+        firstGoalTitle: data.firstGoalTitle,
+        firstGoalTarget: moneyNumber(data.firstGoalTarget) || 10000,
       });
-      onComplete();
+      await onComplete();
     } catch (err) {
-      console.error(err);
+      setError(err instanceof Error ? err.message : 'Could not save onboarding.');
+    } finally {
+      setSaving(false);
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-background p-container-margin py-xl flex flex-col items-center">
-      <div className="w-full max-w-sm flex-1 flex flex-col gap-10">
-        <header className="flex justify-between items-center">
-          <div className="flex gap-1">
-            {Array.from({ length: totalSteps }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i + 1 <= step ? 'bg-primary w-6' : 'bg-surface-container w-3'
-                }`}
-              />
+    <main className="min-h-screen bg-background px-container-margin py-xl">
+      <section className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl flex-col">
+        <header className="mb-10 flex items-center justify-between">
+          <div className="flex gap-2">
+            {steps.map((label, index) => (
+              <div key={label} className={`h-2 rounded-full transition-all ${index <= step ? 'w-12 bg-primary' : 'w-5 bg-surface-container'}`} />
             ))}
           </div>
-          <span className="text-label-caps text-secondary font-bold">STEP {step}/{totalSteps}</span>
+          <span className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">{steps[step]}</span>
         </header>
 
-        <AnimatePresence mode="wait">
-          {step === 1 && (
-            <motion.div
-              key="step1"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-lg"
-            >
-              <div className="space-y-4">
-                <div className="w-14 h-14 bg-primary-container rounded-2xl flex items-center justify-center glow-shadow">
-                  <User className="w-7 h-7 text-on-primary-container" />
-                </div>
-                <h2 className="text-display-lg-mobile font-bold tracking-tight">Tell us about yourself.</h2>
-                <p className="text-body-lg text-on-surface-variant">This helps us tailor your insights.</p>
-              </div>
-              
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <p className="text-label-caps font-bold opacity-60">AGE GROUP</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: 'under18', label: 'Under 18' },
-                      { id: '18-24', label: '18-24' },
-                      { id: '25-40', label: '25-40' },
-                      { id: '40+', label: '40+' }
-                    ].map(age => (
-                      <button
-                        key={age.id}
-                        onClick={() => setData({ ...data, ageGroup: age.id })}
-                        className={`p-4 rounded-2xl border-2 transition-all ${
-                          data.ageGroup === age.id ? 'border-primary bg-primary/5 text-primary font-bold' : 'border-surface-container text-on-surface-variant'
-                        }`}
-                      >
-                        {age.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+        <div className="grid flex-1 items-center gap-10 lg:grid-cols-[.85fr_1.15fr]">
+          <div>
+            <p className="text-label-caps font-black uppercase tracking-widest text-primary">Adaptive setup</p>
+            <h1 className="mt-4 text-5xl font-black leading-[0.94] tracking-normal sm:text-6xl lg:text-7xl">
+              {step === 0 && 'Start with your real money rhythm.'}
+              {step === 1 && 'Income can be unknown or zero.'}
+              {step === 2 && 'Choose what Aura should protect first.'}
+            </h1>
+            <p className="mt-5 max-w-md text-body-lg leading-relaxed text-on-surface-variant">
+              Aura will progressively enrich your profile as data arrives. It will not force a salary template or invent missing financial context.
+            </p>
+          </div>
 
-                <div className="space-y-3">
-                  <p className="text-label-caps font-bold opacity-60">STATUS</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: 'taxpayer', label: 'Taxpayer' },
-                      { id: 'non-taxpayer', label: 'Non-Taxpayer' }
-                    ].map(status => (
-                      <button
-                        key={status.id}
-                        onClick={() => setData({ ...data, taxpayerStatus: status.id })}
-                        className={`p-4 rounded-2xl border-2 transition-all ${
-                          data.taxpayerStatus === status.id ? 'border-primary bg-primary/5 text-primary font-bold' : 'border-surface-container text-on-surface-variant'
-                        }`}
-                      >
-                        {status.label}
-                      </button>
-                    ))}
-                  </div>
+          <div className="rounded-[2rem] border border-surface-container bg-surface p-5 card-shadow">
+            {step === 0 && (
+              <div className="grid gap-3">
+                {(Object.keys(LIFESTYLES) as Lifestyle[]).map((id) => {
+                  const Icon = personaIcons[id];
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setData({ ...data, lifestyle: id, firstGoalTitle: LIFESTYLES[id].defaultGoal })}
+                      className={`flex items-center gap-4 rounded-3xl border-2 p-5 text-left transition-all ${data.lifestyle === id ? 'border-primary bg-primary/5' : 'border-surface-container'}`}
+                    >
+                      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-container-low text-primary"><Icon className="h-6 w-6" /></div>
+                      <div className="flex-1">
+                        <p className="font-black">{LIFESTYLES[id].label}</p>
+                        <p className="mt-1 text-body-sm text-on-surface-variant">{LIFESTYLES[id].summary}</p>
+                      </div>
+                      {data.lifestyle === id && <Check className="h-5 w-5 text-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {step === 1 && (
+              <div className="grid gap-5">
+                <label className="space-y-2">
+                  <span className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Currency</span>
+                  <select value={data.currency} onChange={(event) => setData({ ...data, currency: event.target.value })} className="h-14 w-full rounded-2xl bg-surface-container-low px-4 outline-none">
+                    {Object.values(CURRENCIES).map((item) => <option key={item.code} value={item.code}>{item.code} ({item.symbol}) - {item.label}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2">
+                  <span className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Income rhythm</span>
+                  <select value={data.cashflowCadence} onChange={(event) => setData({ ...data, cashflowCadence: event.target.value as CashflowCadence })} className="h-14 w-full rounded-2xl bg-surface-container-low px-4 outline-none">
+                    {Object.entries(CADENCES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2">
+                  <span className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Expected monthly inflow</span>
+                  <input value={data.expectedMonthlyInflow} onChange={(event) => setData({ ...data, expectedMonthlyInflow: event.target.value })} inputMode="decimal" placeholder="Skip if unknown" className="h-14 w-full rounded-2xl bg-surface-container-low px-4 outline-none" />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Current available balance</span>
+                  <input value={data.balance} onChange={(event) => setData({ ...data, balance: event.target.value })} inputMode="decimal" placeholder="Optional. Use 0 only if verified." className="h-14 w-full rounded-2xl bg-surface-container-low px-4 outline-none" />
+                </label>
+                <label className="flex items-center gap-3 rounded-2xl bg-surface-container-low p-4 text-body-sm font-bold">
+                  <input type="checkbox" checked={data.balanceKnown} onChange={(event) => setData({ ...data, balanceKnown: event.target.checked })} />
+                  This balance is verified.
+                </label>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="grid gap-5">
+                <label className="space-y-2">
+                  <span className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">First protected outcome</span>
+                  <input value={data.firstGoalTitle} onChange={(event) => setData({ ...data, firstGoalTitle: event.target.value })} className="h-14 w-full rounded-2xl bg-surface-container-low px-4 outline-none" />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-label-caps font-black uppercase tracking-widest text-on-surface-variant">Target amount ({currency.symbol})</span>
+                  <input value={data.firstGoalTarget} onChange={(event) => setData({ ...data, firstGoalTarget: event.target.value })} inputMode="decimal" className="h-14 w-full rounded-2xl bg-surface-container-low px-4 outline-none" />
+                </label>
+                <div className="rounded-3xl bg-primary/10 p-5 text-body-sm font-bold leading-relaxed text-primary">
+                  Forecasts remain locked until you add at least 5 real transactions across at least 7 calendar days and 2 active transaction days.
                 </div>
               </div>
-            </motion.div>
-          )}
+            )}
+          </div>
+        </div>
 
-          {step === 2 && (
-            <motion.div
-              key="step2"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-lg"
-            >
-              <div className="space-y-4">
-                <div className="w-14 h-14 bg-tertiary-container rounded-2xl flex items-center justify-center">
-                  <Globe className="w-7 h-7 text-on-tertiary-container" />
-                </div>
-                <h2 className="text-display-lg-mobile font-bold tracking-tight">Pick your currency.</h2>
-                <p className="text-body-lg text-on-surface-variant">We'll use this for all your metrics.</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                    {CURRENCIES.map((c) => (
-                  <button
-                    key={c.code}
-                    onClick={() => selectAndNext({ currency: c.code, currencySymbol: c.symbol })}
-                    className={`p-4 rounded-2xl border-2 text-left transition-all ${
-                      data.currency === c.code 
-                        ? 'border-primary bg-primary/5' 
-                        : 'border-surface-container'
-                    }`}
-                  >
-                    <div className="flex flex-col">
-                      <span className={`text-title-md font-black ${data.currency === c.code ? 'text-primary' : 'text-on-surface'}`}>{c.symbol}</span>
-                      <span className="text-label-caps text-[10px] opacity-60">{c.label}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
+        {error && <p className="mt-6 rounded-2xl bg-error-container p-4 text-error font-bold">{error}</p>}
 
-          {step === 3 && (
-            <motion.div
-              key="step3"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-lg"
-            >
-              <div className="space-y-4">
-                <div className="w-14 h-14 bg-primary-container rounded-2xl flex items-center justify-center glow-shadow">
-                  <Wallet className="w-7 h-7 text-on-primary-container" />
-                </div>
-                <h2 className="text-display-lg-mobile font-bold tracking-tight">Let's set your foundation.</h2>
-                <p className="text-body-lg text-on-surface-variant">
-                  {data.ageGroup === 'under18' ? 'What is your typical monthly allowance?' : 'What is your typical monthly income after taxes?'}
-                </p>
-              </div>
-              <div className="relative">
-                <span className="absolute left-6 top-1/2 -translate-y-1/2 text-title-md">{data.currencySymbol}</span>
-                <input
-                  type="number"
-                  value={data.monthlyIncome}
-                  onChange={(e) => setData({ ...data, monthlyIncome: e.target.value })}
-                  placeholder="0.00"
-                  className="w-full bg-surface-container-low h-16 rounded-2xl pl-12 pr-6 text-title-md border-none focus:ring-2 focus:ring-primary-container outline-none"
-                />
-              </div>
-            </motion.div>
-          )}
-
-          {step === 4 && (
-            <motion.div
-              key="step4"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-lg"
-            >
-              <div className="space-y-4">
-                <div className="w-14 h-14 bg-tertiary-container rounded-2xl flex items-center justify-center">
-                  <TrendingUp className="w-7 h-7 text-on-tertiary-container" />
-                </div>
-                <h2 className="text-display-lg-mobile font-bold tracking-tight">Your financial style.</h2>
-                <p className="text-body-lg text-on-surface-variant">How would you describe your spending behavior?</p>
-              </div>
-              <div className="space-y-3">
-                {personas.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => selectAndNext({ financialPersona: p.id })}
-                    className={`w-full p-6 rounded-3xl text-left transition-all ${
-                      data.financialPersona === p.id 
-                        ? 'bg-primary text-on-primary shadow-lg ring-4 ring-primary/10' 
-                        : 'bg-surface-container-low hover:bg-surface-container'
-                    }`}
-                  >
-                    <p className={`font-bold ${data.financialPersona === p.id ? 'text-on-primary' : 'text-on-surface'}`}>{p.label}</p>
-                    <p className={`text-body-sm mt-1 ${data.financialPersona === p.id ? 'text-on-primary/80' : 'text-on-surface-variant'}`}>{p.desc}</p>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {step === 5 && (
-            <motion.div
-              key="step5"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-lg"
-            >
-              <div className="space-y-4">
-                <div className="w-14 h-14 bg-primary-container rounded-2xl flex items-center justify-center glow-shadow">
-                  <Plane className="w-7 h-7 text-on-primary-container" />
-                </div>
-                <h2 className="text-display-lg-mobile font-bold tracking-tight">One final thing.</h2>
-                <p className="text-body-lg text-on-surface-variant">What is your primary financial goal right now?</p>
-              </div>
-              <div className="space-y-3">
-                {['Travel to Japan', 'Emergency Fund', 'Buy a Laptop', 'Invest in Tech'].map((goal) => (
-                  <button
-                    key={goal}
-                    onClick={() => selectAndNext({ primaryGoal: goal })}
-                    className={`w-full p-5 rounded-2xl text-left flex items-center justify-between transition-all ${
-                      data.primaryGoal === goal 
-                        ? 'bg-primary text-on-primary' 
-                        : 'bg-surface-container-low hover:bg-surface-container'
-                    }`}
-                  >
-                    <span className="font-bold">{goal}</span>
-                    {data.primaryGoal === goal && <Sparkles className="w-5 h-5 fill-current" />}
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <div className="w-full max-w-sm mt-10">
-        <motion.button
-          whileTap={{ scale: 0.95 }}
-          animate={canContinue() ? { 
-            scale: [1, 1.02, 1],
-            boxShadow: [
-              "0 10px 15px -3px rgba(0,0,0,0.1)",
-              "0 20px 25px -5px rgba(0,0,0,0.2)",
-              "0 10px 15px -3px rgba(0,0,0,0.1)"
-            ]
-          } : {}}
-          transition={{ repeat: Infinity, duration: 2 }}
-          onClick={handleNext}
-          disabled={!canContinue()}
-          className="w-full bg-on-background text-background h-[64px] rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-20 transition-all"
-        >
-          {step === totalSteps ? 'GIVE ME ACCESS' : 'CONTINUE'}
-          <ArrowRight className="w-5 h-5" />
-        </motion.button>
-      </div>
-    </div>
+        <footer className="mt-8 flex items-center justify-between">
+          <button disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))} className="flex h-14 items-center gap-2 rounded-2xl bg-surface px-5 font-black disabled:opacity-30">
+            <ArrowLeft className="h-5 w-5" /> Back
+          </button>
+          <button
+            disabled={saving}
+            onClick={() => step === steps.length - 1 ? finish() : setStep((value) => value + 1)}
+            className="flex h-14 items-center gap-2 rounded-2xl bg-on-surface px-6 font-black text-surface disabled:opacity-50"
+          >
+            {step === steps.length - 1 ? saving ? 'Saving...' : 'Enter Aura' : 'Continue'} <ArrowRight className="h-5 w-5" />
+          </button>
+        </footer>
+      </section>
+    </main>
   );
 }
